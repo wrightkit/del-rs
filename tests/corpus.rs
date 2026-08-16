@@ -83,9 +83,26 @@ fn run_case(path: &Path, text: &str, expect: Expect) -> CaseResult {
     let out = parse_source(id, text);
     let parse_errors = out.diagnostics.iter().filter(|d| d.is_error()).count();
 
+    // Semantic stage (issue #4): run for fixtures that need it.
+    let mut semantic_errors = 0usize;
+    if parse_errors == 0 {
+        let root = path.parent().unwrap().to_path_buf();
+        let project = del_rs::project::load_project(del_rs::project::ProjectOptions {
+            root,
+            entry: Some(path.to_path_buf()),
+            config: None,
+        });
+        let mut all = project.diagnostics.clone();
+        if !project.diagnostics.iter().any(|d| d.is_error()) {
+            let program = del_rs::semantic::check_project(&project, &del_rs::semantic::provider::NoopProvider::new());
+            all.extend(program.diagnostics);
+        }
+        semantic_errors = all.iter().filter(|d| d.is_error()).count();
+    }
+
     let outcome: &'static str = match expect {
         Expect::Ok => {
-            if parse_errors == 0 {
+            if parse_errors == 0 && semantic_errors == 0 {
                 "PASS"
             } else {
                 "FAIL"
@@ -98,10 +115,16 @@ fn run_case(path: &Path, text: &str, expect: Expect) -> CaseResult {
                 "FAIL"
             }
         }
-        Expect::SemanticError | Expect::HirError => {
-            // Full-stage checks land with issues #4/#6; for now the parse
-            // stage must be clean for these fixtures.
-            if parse_errors == 0 {
+        Expect::SemanticError => {
+            if parse_errors == 0 && semantic_errors > 0 {
+                "PASS"
+            } else {
+                "FAIL"
+            }
+        }
+        Expect::HirError => {
+            // HIR validation lands with issue #6; parse+semantic must be clean.
+            if parse_errors == 0 && semantic_errors == 0 {
                 "PENDING"
             } else {
                 "FAIL"

@@ -47,6 +47,7 @@ pub struct LineCol {
     pub col: u32,
 }
 
+#[derive(Clone)]
 pub struct SourceFile {
     pub id: FileId,
     /// Display path (root-relative for project files).
@@ -103,6 +104,7 @@ impl SourceFile {
     }
 }
 
+#[derive(Clone)]
 pub struct SourceMap {
     files: Vec<SourceFile>,
     by_name: HashMap<PathBuf, FileId>,

@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod matrix;
 pub mod syntax;
 pub mod project;
+pub mod semantic;
 
 pub use diagnostics::{Diagnostic, Phase, RelatedSpan, Severity};
 pub use span::{FileId, LineCol, SourceFile, SourceMap, Span};

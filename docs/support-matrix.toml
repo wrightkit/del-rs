@@ -346,126 +346,126 @@ notes = "recoverable parsing is a del-rs goal (issue #3); upstream supports inco
 id = "semantic.scoping"
 name = "semantic.scoping"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "semantic.access-control"
 name = "semantic.access-control"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "semantic.immutability"
 name = "semantic.immutability"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/immutable-array-modification-error.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.struct-ref-methods"
 name = "semantic.struct-ref-methods"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/struct-variable-guard-error.del", "tests/corpus/semantic/ref-call-from-nonref-error.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.struct-indexing"
 name = "semantic.struct-indexing"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/struct-index-error.del", "tests/corpus/semantic/single-struct-index-ok.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.condition-restrictions"
 name = "semantic.condition-restrictions"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/invalid-condition-value-struct.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.type-checking"
 name = "semantic.type-checking"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "semantic.type-args"
 name = "semantic.type-args"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "semantic.enum-keys"
 name = "semantic.enum-keys"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/enum-invalid-key-error.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.enum-recursion"
 name = "semantic.enum-recursion"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/enum-recursive-error.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.pattern-matching"
 name = "semantic.pattern-matching"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/enum-incompatible-pattern-error.del", "tests/corpus/semantic/enum-extraneous-binding-error.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.generic-binding"
 name = "semantic.generic-binding"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/generic-parent-linking-ok.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.overloads"
 name = "semantic.overloads"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "semantic.ref-in-params"
 name = "semantic.ref-in-params"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/ref-param-target.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.target-player-resolution"
 name = "semantic.target-player-resolution"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/chase-event-player-var.del", "tests/corpus/semantic/player-struct-target.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.disabled"
 name = "semantic.disabled"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/disabled-rule.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.variable-prefix"
 name = "semantic.variable-prefix"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/variable-prefix.del", "docs/inventory.md"]
 
 [[features]]
 id = "semantic.lambda-capture"
 name = "semantic.lambda-capture"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 notes = "captured values are saved by value at lambda creation"
 
@@ -473,119 +473,119 @@ notes = "captured values are saved by value at lambda creation"
 id = "semantic.single-vs-parallel"
 name = "semantic.single-vs-parallel"
 category = "semantic"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/enum-parallel-any-errors.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.class-allocation"
 name = "runtime-semantics.class-allocation"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/class-allocation.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.delete"
 name = "runtime-semantics.delete"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/reference-validation.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.reference-validation"
 name = "runtime-semantics.reference-validation"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/reference-validation-simple.del", "tests/corpus/highlevel/class-array-validation.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.generations"
 name = "runtime-semantics.generations"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/generation-validation.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.virtual-dispatch"
 name = "runtime-semantics.virtual-dispatch"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/inheritance-overrides.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.initial-values"
 name = "runtime-semantics.initial-values"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/initial-class-values.del", "tests/corpus/highlevel/initial-class-values-inheritance.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.recursion"
 name = "runtime-semantics.recursion"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/recursion-inline.del", "tests/corpus/highlevel/recursion-subroutine.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.lambda-closures"
 name = "runtime-semantics.lambda-closures"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/recursion-closure.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.struct-copy"
 name = "runtime-semantics.struct-copy"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/nested-single-struct.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.enum-storage"
 name = "runtime-semantics.enum-storage"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/enum-single.del", "tests/corpus/highlevel/enum-parallel.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.pattern-binding"
 name = "runtime-semantics.pattern-binding"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/enum-binding-mutability-ok.del", "tests/corpus/highlevel/enum-player-binding.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.switch-fallthrough"
 name = "runtime-semantics.switch-fallthrough"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/switch-fallthrough.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.auto-for"
 name = "runtime-semantics.auto-for"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["tests/corpus/semantic/auto-for-player-var.del", "docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.extended-collection"
 name = "runtime-semantics.extended-collection"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.subroutine-context"
 name = "runtime-semantics.subroutine-context"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
 id = "runtime-semantics.async-calls"
 name = "runtime-semantics.async-calls"
 category = "runtime-semantics"
-state = "planned"
+state = "semantic-supported"
 evidence = ["docs/inventory.md"]
 
 [[features]]
