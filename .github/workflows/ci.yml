@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
 
 env:
@@ -17,6 +17,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: false
       - name: Build
         run: cargo build --all-targets
       - name: Test
