@@ -89,15 +89,19 @@ impl<'a> Lowerer<'a> {
 
     fn run(&mut self) {
         // Pass 1: declare top-level vars, functions, classes, enums.
-        for parsed in self.program.asts.values() {
-            for item in &parsed.items {
-                self.declare_item(item);
+        for file in &self.program.project.files {
+            if let Some(parsed) = self.program.asts.get(file) {
+                for item in &parsed.items {
+                    self.declare_item(item);
+                }
             }
         }
         // Pass 2: lower bodies.
-        for parsed in self.program.asts.values() {
-            for item in &parsed.items {
-                self.lower_item(item);
+        for file in &self.program.project.files {
+            if let Some(parsed) = self.program.asts.get(file) {
+                for item in &parsed.items {
+                    self.lower_item(item);
+                }
             }
         }
     }
@@ -638,8 +642,13 @@ impl<'a> Lowerer<'a> {
             ExprKind::Bool(b) => HirExprKind::Literal(LiteralValue::Bool(*b)),
             ExprKind::Null => HirExprKind::Literal(LiteralValue::Null),
             ExprKind::Ident(_) => {
-                if std::env::var("DEL_DEBUG").is_ok() {
-                    eprintln!("ident node {} resolution: {:?}", e.id.0, self.program.resolution.get(&e.id));
+                if self.ident_name(e) == "cam" && std::env::var("DEL_DEBUG").is_ok() {
+                    eprintln!("cam node {} res {:?} local_vars contains decl: {}", e.id.0,
+                        self.program.resolution.get(&e.id),
+                        self.program.resolution.get(&e.id).map(|r| match r {
+                            Resolution::Symbol(s) => self.local_vars.contains_key(&self.program.tables.symbol(*s).decl),
+                            _ => false,
+                        }).unwrap_or(false));
                 }
                 if let Some(Resolution::Symbol(sid)) = self.program.resolution.get(&e.id) {
                     if let Some(vid) = self.symbol_var.get(&sid) {
