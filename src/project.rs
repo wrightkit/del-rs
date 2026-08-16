@@ -35,6 +35,7 @@ pub struct ImportEdge {
     pub span: Span,
 }
 
+#[derive(Clone)]
 pub struct Project {
     pub sources: SourceMap,
     pub root: PathBuf,
