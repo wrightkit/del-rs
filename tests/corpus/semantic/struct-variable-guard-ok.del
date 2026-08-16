@@ -1,0 +1,14 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/Semantics/SemanticsTest.cs
+// license: MIT
+// expect: ok
+struct TestStruct
+{
+    public Number X;
+    public void Func() {}
+}
+rule: "Test" {
+    TestStruct test1;
+    TestStruct test2: { X: 0 };
+    test1.Func();
+    test2.Func();
+}

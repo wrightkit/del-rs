@@ -1,0 +1,11 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/HighLevelTest.cs
+// license: MIT
+// expect: ok
+globalvar Number RESULT;
+
+rule: "Test" {
+    Number value = {0};
+    if (value == 1) { RESULT = 1; }
+    else if (value == 3) { RESULT = 2; }
+    else { RESULT = 3; }
+}

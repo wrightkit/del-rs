@@ -1,0 +1,10 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: ok
+enum EnumTest {
+    A
+}
+
+rule: "Incompatible pattern matching errors" {
+    if (0 is EnumTest.A) {}
+}

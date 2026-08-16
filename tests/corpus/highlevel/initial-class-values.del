@@ -1,0 +1,20 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/HighLevelTest.cs
+// license: MIT
+// expect: ok
+// note: issue #355
+class Class {
+    public Number num;
+    public Str str = { x: 1, y: 2 };
+}
+
+struct Str {
+    public Number x;
+    public Number y;
+}
+
+rule: "" {
+    Class instance = new Class();
+    define a = instance.num;
+    define b = instance.str.x;
+    define c = instance.str.y;
+}

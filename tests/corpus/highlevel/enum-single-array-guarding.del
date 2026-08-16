@@ -1,0 +1,17 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: ok
+single enum EnumTest { A(String, String) }
+
+rule: "Behaviour test"
+{
+    EnumTest[] test1 = [EnumTest.A("first", "1st")];
+    test1 += EnumTest.A("second", "2nd");
+}
+
+rule: "Intentionally breaking the rules!"
+{
+    EnumTest[] test2 = [EnumTest.A("first", "1st")];
+    // This adds a compiler warning.
+    test2 += <Any>EnumTest.A("second", "2nd");
+}

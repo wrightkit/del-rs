@@ -1,0 +1,20 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/HighLevelTest.cs
+// license: MIT
+// expect: ok
+// note: runtime abort expected after delete; STEP stays 1
+class A {
+    public void Exec() {}
+}
+
+globalvar Number STEP;
+
+rule: "Variable Generation Test" {
+    A a = new A();
+    a.Exec(); // Should continue OK 
+
+    delete a;
+    STEP = 1;
+    
+    a.Exec(); // Error and abort here
+    STEP = 2; // This should not be reached
+}

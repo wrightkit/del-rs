@@ -1,0 +1,11 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: semantic-error
+// note: expects error 'Extraneous variable binding for enum member 'A''
+enum EnumTest {
+    A
+}
+
+rule: "Extraneous variable binding error" {
+    if (0 is EnumTest.A(value)) {}
+}

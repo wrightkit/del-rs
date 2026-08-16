@@ -1,0 +1,24 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/HighLevelTest.cs
+// license: MIT
+// expect: ok
+class A {
+    public Number Value;
+}
+
+globalvar Number A1_VALUE;
+globalvar Number A2_VALUE;
+globalvar Number A3_VALUE;
+
+rule: "Variable Generation Test" {
+    A a1 = new A();
+    A a2 = new A();
+    A a3 = new A();
+
+    a1.Value = 1;
+    a2.Value = 2;
+    a3.Value = 3;
+
+    A1_VALUE = a1.Value;
+    A2_VALUE = a2.Value;
+    A3_VALUE = a3.Value;
+}

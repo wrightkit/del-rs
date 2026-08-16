@@ -1,0 +1,8 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/Parser/ParserTest.cs
+// license: MIT
+// expect: parse-error
+// note: state of InterpolatedString test after inserting '"' before ';' (AssertNotOk): double-quote opens an unterminated string
+rule: "Interpolated string test"
+{
+    define x = $'Total time elapsed: {TotalTimeElapsed()}, time remaining: {60 - TotalTimeElapsed()}' ";
+}
