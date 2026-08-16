@@ -1,0 +1,20 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: ok
+rule: "enum test" {
+    define a = EnumTest.A;
+    define b = EnumTest.B;
+    define c = EnumTest.C;
+    define d = EnumTest.D;
+
+    define added = a + b + c + d;
+
+    define used_as_indexer = [5, 6, 7, 8][c];
+}
+
+enum EnumTest {
+    A,
+    B,
+    C,
+    D
+}

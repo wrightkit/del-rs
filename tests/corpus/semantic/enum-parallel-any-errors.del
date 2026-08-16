@@ -1,0 +1,19 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: semantic-error
+// note: expects errors 'Expected a value of type 'Any'', 'cannot be used as an indexer', 'This struct cannot be indexed'
+rule: 'Use enum members as function' {
+    // Expected a value of type 'Any'.
+    Any x = EnumTest.A;
+    
+    // Cannot be used as indexer.
+    define y = [][EnumTest.A];
+
+    // Cannot be indexed.
+    define z = EnumTest.A[0];
+}
+
+enum EnumTest {
+    A,
+    B(Number)
+}

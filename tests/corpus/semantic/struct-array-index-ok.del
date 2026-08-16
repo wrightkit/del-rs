@@ -1,0 +1,12 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/Semantics/SemanticsTest.cs
+// license: MIT
+// expect: ok
+struct Str {
+    Number a;
+}
+
+rule: ''
+{
+    Str[] a;
+    a[0] = { a: 0 };
+}

@@ -1,0 +1,67 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger/Modules/Debug Camera.del
+// license: MIT
+// expect: ok
+// note: file name matches the upstream module name; content unchanged
+define CameraSpeed: IsButtonHeld(EventPlayer(), Button.Ability1) ? 30 : 10;
+define ToggleKey: IsCommunicating(EventPlayer(), Communication.VoiceLineDown);
+
+playervar define cam = false;
+playervar define cameraPos;
+playervar define cameraHUD;
+
+rule: "Free cam"
+Event.OngoingPlayer
+if (ToggleKey)
+{
+    cam = !cam;
+}
+
+rule: "Start Camera"
+Event.OngoingPlayer
+if (cam)
+{
+    CreateHudText(EventPlayer(), null, "Camera Position:", cameraPos, Location.Left, 4, Color.White, Color.White, Color.Blue);
+    cameraHUD = LastTextID();
+
+    cameraPos = EyePosition(EventPlayer());
+
+    ChaseVariableAtRate(
+        cameraPos,
+        cameraPos +
+            ((FacingDirectionOf() * ThrottleOf().Z) + // Forward
+            (FacingDirectionOf().CrossProduct(Up()) * -ThrottleOf().X) + // Left
+            Vector(0,
+                [0, 1, -1][IndexOfArrayValue([IsButtonHeld(EventPlayer(), Button.Jump), IsButtonHeld(EventPlayer(), Button.Crouch)], true) + 1],
+            0))
+            * 100,
+        (ThrottleOf() != Vector.Zero || IsButtonHeld(EventPlayer(), Button.Jump) || IsButtonHeld(EventPlayer(), Button.Crouch)) ? CameraSpeed : 0,
+        RateChaseReevaluation.DestinationAndRate
+    );
+
+    StartCamera(EventPlayer(), cameraPos, cameraPos + FacingDirectionOf(EventPlayer()), 25);
+    SetMoveSpeed(EventPlayer(), 0);
+    DisallowButton(EventPlayer(), Button.Ability1);
+}
+
+rule: "Stop Camera"
+Event.OngoingPlayer
+if (!cam)
+{
+    StopChasingVariable(EventPlayer().cameraPos);
+    StopCamera(EventPlayer());
+    SetMoveSpeed(EventPlayer(), 100);
+    AllowButton(EventPlayer(), Button.Ability1);
+    
+    DestroyHudText(cameraHUD);
+}
+
+rule: "TP to camera"
+Event.OngoingPlayer
+if (cam)
+if (IsCommunicating(EventPlayer(), Communication.VoiceLineLeft))
+{
+    cam = false;
+    define storeFacing = FacingDirectionOf(EventPlayer());
+    Teleport(EventPlayer(), cameraPos);
+    SetFacing(EventPlayer(), storeFacing, Relative.ToWorld);
+}

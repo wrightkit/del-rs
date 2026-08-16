@@ -1,0 +1,21 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: ok
+rule: "Parallel enum basic usage" {
+    EnumTest[] values = [
+        EnumTest.D,
+        EnumTest.C("one", "two"),
+        EnumTest.B(67),
+        EnumTest.A
+    ];
+
+    Number index_of_a = values.IndexOf(EnumTest.A);
+    Number index_of_a_with_key = values.Map(v => v.Key).IndexOf(EnumTest.A.Key);
+}
+
+enum EnumTest {
+    A,
+    B(Number),
+    C(String, String),
+    D
+}

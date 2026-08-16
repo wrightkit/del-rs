@@ -1,0 +1,28 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/HighLevelTest.cs
+// license: MIT
+// expect: ok
+// note: runtime abort expected; STEP stays 1
+class A {
+    public void Exec() {}
+}
+
+globalvar Number STEP;
+globalvar Boolean POINTERS_ARE_EQUAL;
+
+rule: "Variable Generation Test" {
+    A a1 = new A();
+    delete a1;
+
+    // Should replace a1's index.
+    A a2 = new A();
+
+    POINTERS_ARE_EQUAL = XOf(<Any>a1) == XOf(<Any>a2);
+
+    // Should work with new referecne
+    a2.Exec();
+    STEP = 1;
+
+    // Should fail on old reference
+    a1.Exec(); // Error and abort here
+    STEP = 2;  // This should not be reached
+}

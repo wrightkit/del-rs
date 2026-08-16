@@ -1,0 +1,11 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: semantic-error
+// note: expects error 'Constant or parallel operand type '{Number struct_value}' cannot be used to pattern match with enum type 'EnumTest''
+enum EnumTest {
+    A
+}
+
+rule: "Incompatible pattern matching errors" {
+    if ({struct_value: 0} is EnumTest.A) {}
+}

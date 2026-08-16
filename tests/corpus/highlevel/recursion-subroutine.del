@@ -1,0 +1,20 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/RecursionTest.cs
+// license: MIT
+// expect: ok
+rule: "Test" {
+    Number f0 = factorial(0);
+    Number f1 = factorial(1);
+    Number f2 = factorial(2);
+    Number f3 = factorial(3);
+    Number f4 = factorial(4);
+    Number f5 = factorial(5);
+    Number f6 = factorial(6);
+    LogToInspector($"{f0}, {f1}, {f2}, {f3}, {f4}, {f5}, {f6}");
+}
+
+recursive Number factorial(Number n) 'factorial subroutine' {
+    if (n > 0)
+        return n * factorial(n - 1);
+    else
+        return 1;
+}

@@ -1,0 +1,15 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/ArrayTest.cs
+// license: MIT
+// expect: ok
+struct Str
+{
+    public Number[][] value;
+}
+
+playervar Str str;
+
+rule: "" {
+    HostPlayer().str = { value: [[1, 2, 3], [4, 5], [7, 8]] };
+    HostPlayer().str.value[1] += 6;
+    HostPlayer().str.value[2].ModAppend(9);
+}

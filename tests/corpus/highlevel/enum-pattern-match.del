@@ -1,0 +1,22 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/HighLevelTests/EnumTest.cs
+// license: MIT
+// expect: ok
+rule: "Enum pattern matching" {
+    if (EnumTest.B is EnumTest.A) {
+        define a = true;
+    }
+
+    if (EnumTest.B is EnumTest.B) {
+        define b = true;
+    }
+
+    if (EnumTest.B is EnumTest.C) {
+        define c = true;
+    }
+}
+
+enum EnumTest {
+    A,
+    B,
+    C
+}

@@ -1,0 +1,15 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/Semantics/SemanticsTest.cs
+// license: MIT
+// expect: semantic-error
+// note: expects error 'Cannot call ref function in a non-ref function'
+struct TestStruct {
+    public Number Local;
+
+    public void FuncA() {
+        FuncB();
+    }
+
+    public ref void FuncB() {
+        Local = 3;
+    }
+}

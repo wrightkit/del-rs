@@ -1,0 +1,16 @@
+// source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/817c1db4bace52123f054ffe10d3d8a06052e687/Deltinteger/Deltinteger.Tests/Semantics/GenericsTest.cs
+// license: MIT
+// expect: ok
+// note: issue #476
+rule: 'My Rule' {
+    Test<Number> t = new Test<Number>();
+    t.Log();
+}
+
+class Test<T> {
+    public void LogInner() {}
+
+    public void Log() {
+        LogInner();
+    }
+}
