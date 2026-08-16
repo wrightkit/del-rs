@@ -22,8 +22,7 @@ with no `workshop-rs` dependency.
 - library APIs and a standalone CLI (`parse`, `check`, `hir`, `inspect`, `matrix`).
 
 `del-rs` does **not** own canonical Workshop catalog data, WIR, localization,
-or emission — those belong to `wrightkit/workshop-rs` (integration tracked as
-[issue #8](https://github.com/wrightkit/del-rs/issues/8)). Workshop-facing
+or emission — those belong to `wrightkit/workshop-rs`. Workshop-facing
 names bind through the [`WorkshopProvider`](docs/architecture.md) trait
 (`del_rs::semantic::provider`) rather than vendored catalog data.
 
@@ -75,8 +74,8 @@ are defined in [`docs/compatibility.md`](docs/compatibility.md).
 | Typed DEL HIR | `hir/` layer | implemented |
 | Semantic inspection / tooling APIs | `del_rs::api`, CLI `inspect` | implemented |
 | Workshop builtin / catalog binding | `workshop-lowering.workshop-catalog` | lowering-dependent (provider contract) |
-| DEL/OSTW → Workshop compilation | `workshop-lowering.*` (18 entries) | lowering-dependent (issue #8) |
-| Workshop → DEL/OSTW reconstruction | `decompiler.*` | planned (issue #9) |
+| DEL/OSTW → Workshop compilation | `workshop-lowering.*` (18 entries) | lowering-dependent |
+| Workshop → DEL/OSTW reconstruction | `decompiler.*` | planned |
 | Editor / VS Code parity | `editor.*` (10 entries) | out-of-scope |
 
 Matrix snapshot (source of truth: `docs/support-matrix.toml`): 49 entries
@@ -163,7 +162,7 @@ typed backend-neutral HIR           lowering + invariant validation
     ↓
 semantic oracle                     bounded interpreter (high-level behavior)
     ↓
-[ integration boundary → workshop-rs ]   (issue #8; not in this crate)
+[ integration boundary → workshop-rs ]   (not in this crate)
 ```
 
 Full details, including the module layout, diagnostics contract, provider
