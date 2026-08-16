@@ -20,6 +20,9 @@ fn main() -> ExitCode {
     }
     let result = match args[0].as_str() {
         "parse" => cmd_parse(&args[1..]),
+        "check" => cmd_check(&args[1..]),
+        "hir" => cmd_hir(&args[1..]),
+        "inspect" => cmd_inspect(&args[1..]),
         "matrix" => cmd_matrix(&args[1..]),
         other => {
             eprintln!("del-rs: unknown command '{other}'");
@@ -62,7 +65,13 @@ fn cmd_parse(args: &[String]) -> Result<u8, String> {
         }
     }
     let file = file.ok_or("parse requires a file argument")?;
-    let text = std::fs::read_to_string(&file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("del-rs: cannot read {}: {e}", file.display());
+            return Ok(4);
+        }
+    };
     let mut sources = del_rs::SourceMap::new();
     let id = sources.add_file(file.clone(), text);
     let out = parse_source(id, sources.text(id));
@@ -95,6 +104,169 @@ fn cmd_parse(args: &[String]) -> Result<u8, String> {
         );
     }
     Ok(if errors > 0 { 1 } else { 0 })
+}
+
+fn cmd_check(args: &[String]) -> Result<u8, String> {
+    let mut json = false;
+    let mut path: Option<PathBuf> = None;
+    for a in args {
+        match a.as_str() {
+            "--json" => json = true,
+            _ if path.is_none() => path = Some(PathBuf::from(a)),
+            _ => return Err(format!("unknown argument '{a}'")),
+        }
+    }
+    let path = path.ok_or("check requires a file or directory argument")?;
+    let report = del_rs::api::check_path(&path, &del_rs::semantic::provider::NoopProvider::new());
+    let errors: Vec<&del_rs::Diagnostic> = report.diagnostics.iter().filter(|d| d.is_error()).collect();
+    if json {
+        let doc = serde_json::json!({
+            "command": "check",
+            "phase": "all",
+            "diagnostics": report.diagnostics,
+            "summary": {
+                "files": report.project.files.len(),
+                "funcs": report.hir.funcs.len(),
+                "rules": report.hir.rules.len(),
+                "classes": report.hir.classes.len(),
+                "errors": errors.len(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+    } else {
+        for d in &report.diagnostics {
+            let lc = report.project.sources.line_col(d.primary, d.primary.start);
+            eprintln!("[{}] {}:{} {}", d.code, lc.line, lc.col, d.message);
+        }
+        println!(
+            "checked: {} files, {} funcs, {} rules, {} classes, {} diagnostics ({} errors)",
+            report.project.files.len(),
+            report.hir.funcs.len(),
+            report.hir.rules.len(),
+            report.hir.classes.len(),
+            report.diagnostics.len(),
+            errors.len()
+        );
+    }
+    Ok(if errors.is_empty() { 0 } else { 1 })
+}
+
+fn cmd_hir(args: &[String]) -> Result<u8, String> {
+    let mut json = false;
+    let mut path: Option<PathBuf> = None;
+    for a in args {
+        match a.as_str() {
+            "--json" => json = true,
+            _ if path.is_none() => path = Some(PathBuf::from(a)),
+            _ => return Err(format!("unknown argument '{a}'")),
+        }
+    }
+    let path = path.ok_or("hir requires a file or directory argument")?;
+    let report = del_rs::api::check_path(&path, &del_rs::semantic::provider::NoopProvider::new());
+    let errors: Vec<&del_rs::Diagnostic> = report.diagnostics.iter().filter(|d| d.is_error()).collect();
+    if json {
+        let doc = serde_json::json!({
+            "command": "hir",
+            "phase": "hir",
+            "diagnostics": report.diagnostics,
+            "summary": {
+                "funcs": report.hir.funcs.len(),
+                "rules": report.hir.rules.len(),
+                "classes": report.hir.classes.len(),
+                "enums": report.hir.enums.len(),
+                "vars": report.hir.vars.len(),
+                "exprs": report.hir.exprs.len(),
+                "errors": errors.len(),
+            },
+        });
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+    } else {
+        println!(
+            "hir: {} funcs, {} rules, {} classes, {} enums, {} vars, {} exprs, {} diagnostics ({} errors)",
+            report.hir.funcs.len(),
+            report.hir.rules.len(),
+            report.hir.classes.len(),
+            report.hir.enums.len(),
+            report.hir.vars.len(),
+            report.hir.exprs.len(),
+            report.diagnostics.len(),
+            errors.len()
+        );
+    }
+    Ok(if errors.is_empty() { 0 } else { 1 })
+}
+
+fn cmd_inspect(args: &[String]) -> Result<u8, String> {
+    let mut json = false;
+    let mut file: Option<PathBuf> = None;
+    let mut pos: Option<String> = None;
+    for a in args {
+        match a.as_str() {
+            "--json" => json = true,
+            _ if file.is_none() => file = Some(PathBuf::from(a)),
+            _ if pos.is_none() => pos = Some(a.clone()),
+            _ => return Err(format!("unknown argument '{a}'")),
+        }
+    }
+    let file = file.ok_or("inspect requires a file argument")?;
+    let pos = pos.ok_or("inspect requires a <line>:<col> argument")?;
+    let (line, col) = pos
+        .split_once(':')
+        .ok_or("position must be <line>:<col>")?;
+    let line: u32 = line.parse().map_err(|_| "bad line")?;
+    let col: u32 = col.parse().map_err(|_| "bad col")?;
+    let report = del_rs::api::check_path(&file, &del_rs::semantic::provider::NoopProvider::new());
+    // Find the file id and convert line:col to a byte offset.
+    let fid = report
+        .project
+        .sources
+        .files()
+        .find(|f| f.name.ends_with(file.file_name().unwrap_or_default()))
+        .map(|f| f.id);
+    let Some(fid) = fid else {
+        eprintln!("inspect: file not part of the project");
+        return Ok(4);
+    };
+    let text = report.project.sources.text(fid);
+    let mut offset = 0u32;
+    let mut cur_line = 1u32;
+    for (i, b) in text.bytes().enumerate() {
+        if cur_line == line {
+            offset = i as u32 + col - 1;
+            break;
+        }
+        if b == b'\n' {
+            cur_line += 1;
+        }
+    }
+    let symbol = del_rs::api::symbol_at(&report.semantic, fid, offset);
+    let ty = del_rs::api::type_at(&report.semantic, fid, offset);
+    if json {
+        let doc = serde_json::json!({
+            "command": "inspect",
+            "phase": "query",
+            "symbol": symbol.map(|s| {
+                let sym = report.semantic.tables.symbol(s);
+                serde_json::json!({ "name": sym.name, "id": s })
+            }),
+            "type": ty.map(|t| t.describe()),
+            "resolution": del_rs::api::resolution_at(&report.semantic, fid, offset).map(|r| format!("{r:?}")),
+        });
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+    } else {
+        match symbol {
+            Some(s) => {
+                let sym = report.semantic.tables.symbol(s);
+                println!("symbol: {} (id {})", sym.name, s);
+            }
+            None => println!("symbol: none"),
+        }
+        match ty {
+            Some(t) => println!("type: {}", t.describe()),
+            None => println!("type: none"),
+        }
+    }
+    Ok(0)
 }
 
 fn cmd_matrix(args: &[String]) -> Result<u8, String> {
