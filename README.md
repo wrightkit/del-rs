@@ -1,47 +1,44 @@
 # del-rs
 
-`del-rs` is the Workshop-independent OSTW/DeltinScript-compatible frontend of
-the [WrightKit](https://github.com/wrightkit) ecosystem. It owns DEL/OSTW
-lexical analysis, recoverable parsing, a source model with provenance,
-project/import loading, semantic analysis, a typed backend-neutral HIR,
-structured diagnostics, and tooling APIs — all in one standalone Rust crate
-with no `workshop-rs` dependency.
+`del-rs` is WrightKit's Rust implementation of the DeltinScript / OSTW
+language. It is a standalone, Workshop-independent library and CLI: it
+parses, loads, type-checks, and analyzes `.del` / `.ostw` source with
+structured diagnostics and full source provenance, and lowers it into a typed
+intermediate representation. No Workshop backend or catalog data is required
+to build or run it.
 
-## Responsibility boundary
+## What del-rs provides
 
-`del-rs` owns everything needed to parse, load, resolve, type-check, and lower
-`.del` / `.ostw` source into a typed, backend-neutral program:
-
-- lexer and recoverable parser (comments/trivia and authored text retained);
+- a lexer and recoverable parser (comments/trivia and authored text retained);
 - multi-file project loading with import resolution and deterministic ordering;
 - source provenance (`Span` on every node) and structured, stable diagnostics;
 - name resolution, type checking, overload resolution, and access control;
 - classes / structs / enums, inheritance and virtual dispatch, generics,
   lambdas and captures, pattern matching, and recursion legality;
-- typed DEL HIR with validation, plus a bounded semantic oracle;
+- a typed intermediate representation with validation, plus a bounded
+  semantic oracle;
 - library APIs and a standalone CLI (`parse`, `check`, `hir`, `inspect`, `matrix`).
 
-`del-rs` does **not** own canonical Workshop catalog data, WIR, localization,
-or emission — those belong to `wrightkit/workshop-rs`. Workshop-facing
-names bind through the [`WorkshopProvider`](docs/architecture.md) trait
-(`del_rs::semantic::provider`) rather than vendored catalog data.
+Workshop emission, catalog data, and localization are outside this crate;
+they belong to `wrightkit/workshop-rs`. Workshop-facing names in `.del` /
+`.ostw` source are accepted but not yet resolved against catalog data; the
+extension point for that resolution is documented in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Features
 
-- **Workshop-independent.** Full frontend pipeline runs with zero Workshop
-  backend or catalog data; `NoopProvider` treats every Workshop-facing name as
-  unresolved-but-legal.
+- **Workshop-independent.** The full pipeline runs with zero Workshop backend
+  or catalog data.
 - **Provenance everywhere.** Every CST/AST/HIR node carries a `Span`
   (file + byte range); diagnostics are structured, stable, and
   JSON-serializable.
 - **Recoverable parsing.** Invalid or incomplete source produces structured
   diagnostics and partial trees, never a panic.
-- **Backend-neutral typed HIR.** Allocation/deletion, reference identity,
-  virtual dispatch, recursion, lambdas, and storage intent are expressed
-  without Workshop encodings.
-- **Bounded semantic oracle.** A tree-walking interpreter distinguishes
-  correct from incorrect high-level behavior on corpus cases before any
-  backend exists.
+- **Typed intermediate representation.** Allocation/deletion, reference
+  identity, virtual dispatch, recursion, lambdas, and storage intent are
+  expressed without Workshop encodings.
+- **Bounded semantic oracle.** A small interpreter distinguishes correct from
+  incorrect high-level behavior on corpus cases before any backend exists.
 - **Machine-checkable compatibility.** The support matrix
   ([`docs/support-matrix.toml`](docs/support-matrix.toml)) is validated on
   every CI run; evidence and provenance are recorded per feature.
@@ -50,41 +47,34 @@ names bind through the [`WorkshopProvider`](docs/architecture.md) trait
 
 ## .del / .ostw compatibility
 
-Compatibility means **observable semantic compatibility for the declared
-support surface** — not upstream compiler architecture and not output-text
-identity. The declared surface is the machine-readable
-[`docs/support-matrix.toml`](docs/support-matrix.toml) (128 entries), backed
-by the corpus under `tests/corpus/`, the
-[`docs/inventory.md`](docs/inventory.md) feature inventory, and the pinned
-upstream oracle ([`docs/provenance.md`](docs/provenance.md)). State meanings
-are defined in [`docs/compatibility.md`](docs/compatibility.md).
+Compatibility with OSTW/DeltinScript is **observable semantic compatibility
+for the declared support surface**, not upstream compiler internals and not
+output-text identity. What counts is whether the same `.del` / `.ostw` source
+is accepted, what diagnostics it produces, and how it is interpreted.
 
-| Capability | Matrix scope | State |
+| Capability | Status | Notes |
 | --- | --- | --- |
-| Lexing and recoverable parsing | `syntax.*` (47 entries) | frontend-supported |
-| Project / import loading | `project.import-resolution`, `project.modules-resolution` | frontend-supported |
-| Source provenance and structured diagnostics | cross-cutting, every phase | implemented |
-| Name resolution and type checking | `semantic.*` (19 entries) | semantic-supported |
-| Class / struct / enum semantics | `syntax.classes/structs/enums`, `runtime-semantics.struct-copy`, `runtime-semantics.enum-storage` | semantic-supported |
-| Inheritance / virtual / override | `syntax.inheritance`, `syntax.virtual-override`, `runtime-semantics.virtual-dispatch` | semantic-supported |
-| Generics | `syntax.generics`, `semantic.generic-binding` | semantic-supported |
-| Lambdas and captures | `syntax.lambdas`, `semantic.lambda-capture`, `runtime-semantics.lambda-closures` | semantic-supported |
-| Pattern matching | `semantic.pattern-matching`, `runtime-semantics.pattern-binding` | semantic-supported |
-| Recursion semantics | `runtime-semantics.recursion` | semantic-supported |
-| Typed DEL HIR | `hir/` layer | implemented |
-| Semantic inspection / tooling APIs | `del_rs::api`, CLI `inspect` | implemented |
-| Workshop builtin / catalog binding | `workshop-lowering.workshop-catalog` | lowering-dependent (provider contract) |
-| DEL/OSTW → Workshop compilation | `workshop-lowering.*` (18 entries) | lowering-dependent |
-| Workshop → DEL/OSTW reconstruction | `decompiler.*` | planned |
-| Editor / VS Code parity | `editor.*` (10 entries) | out-of-scope |
+| Syntax & parsing | ✅ Supported | Lexer and recoverable parser, comments/trivia retained, corpus-backed |
+| Projects & imports | ✅ Supported | Multi-file import resolution and module loading; `ds.toml` project files not yet |
+| Type checking | ✅ Supported | Scoping, overload resolution, access control |
+| Classes, structs & enums | ✅ Supported | Allocation/deletion, copies, enum storage |
+| Inheritance, virtual methods & override | ✅ Supported | |
+| Generics | ✅ Supported | Generic parameters and binding |
+| Lambdas & closures | ✅ Supported | |
+| Pattern matching & recursion | ✅ Supported | |
+| Embedded Workshop / lobby data | 🟡 Partial | Vanilla Workshop blocks parse; lobby-settings import not yet |
+| Workshop builtins | ⏳ Not yet | Requires the `workshop-rs` catalog |
+| DEL/OSTW → Workshop compilation | ⏳ Not yet | Requires `workshop-rs` |
+| Workshop → DEL/OSTW reconstruction | ⏳ Not yet | |
 
-Matrix snapshot (source of truth: `docs/support-matrix.toml`): 49 entries
-`frontend-supported`, 35 `semantic-supported`, 16 `planned`, 18
-`lowering-dependent`, 10 `out-of-scope`. A single aggregate percentage is
-deliberately not reported: the matrix includes lowering-dependent and
-intentionally out-of-scope capabilities, so one number would misrepresent the
-declared support boundary. See [`docs/compatibility.md`](docs/compatibility.md)
-for the contract and methodology.
+Editor / VS Code integration, union types, `abstract`, and `interface`
+semantics are deliberately outside the del-rs language contract; see
+[`docs/limitations.md`](docs/limitations.md).
+
+Per-feature evidence and the machine-readable matrix live in
+[`docs/support-matrix.toml`](docs/support-matrix.toml), with state meanings in
+[`docs/compatibility.md`](docs/compatibility.md) and the feature inventory in
+[`docs/inventory.md`](docs/inventory.md).
 
 ## Building
 
@@ -114,7 +104,7 @@ del-rs matrix [--check] [--json]        # print / validate the embedded support 
 
 `--json` prints exactly one JSON document to stdout with stable field names;
 human-readable diagnostics go to stderr. The CLI never requires a Workshop
-backend — the `NoopProvider` is the only provider in this crate.
+backend.
 
 Example:
 
@@ -154,19 +144,20 @@ let matrix = del_rs::matrix::load_and_validate()?;
     ↓
 lexer → recoverable parser          tokens + AST + diagnostics (spans retained)
     ↓
-project loader                      imports, ds.toml entry, deterministic order
+project loader                      imports, deterministic order
     ↓
-semantic analysis                   symbols, scopes, types, overloads, provider-bound externals
+semantic analysis                   symbols, scopes, types, overloads
     ↓
-typed backend-neutral HIR           lowering + invariant validation
+typed intermediate representation   lowering + invariant validation
     ↓
-semantic oracle                     bounded interpreter (high-level behavior)
+bounded interpreter                 high-level behavior checks
     ↓
 [ integration boundary → workshop-rs ]   (not in this crate)
 ```
 
-Full details, including the module layout, diagnostics contract, provider
-boundary, HIR shape, oracle semantics, CLI contract, and test strategy, are in
+Full details, including the module layout, diagnostics contract, the
+Workshop-name extension point, the intermediate-representation shape, the
+interpreter, the CLI contract, and the test strategy, are in
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Documentation
@@ -174,18 +165,18 @@ boundary, HIR shape, oracle semantics, CLI contract, and test strategy, are in
 All durable documentation is indexed in
 [`docs/README.md`](docs/README.md):
 
-- [Architecture](docs/architecture.md) — implemented architecture baseline, module layout, data flow.
-- [Compatibility contract](docs/compatibility.md) — what compatibility means, matrix states, methodology.
-- [Support matrix](docs/support-matrix.toml) — machine-readable declared surface, validated on CI.
-- [Feature inventory](docs/inventory.md) — the declared language/compiler surface with upstream evidence.
-- [Syntax notes](docs/syntax-notes.md) — lexical/grammar observations from the pinned upstream.
-- [Limitations](docs/limitations.md) — current support boundary, lowering-dependent vs unsupported.
-- [Provenance](docs/provenance.md) — pinned upstream oracle and licensing guardrails.
-- [PM decisions](docs/decisions.md) — ratified product decisions (Q1–Q16).
+- [Architecture](docs/architecture.md): implemented architecture baseline, module layout, data flow.
+- [Compatibility contract](docs/compatibility.md): what compatibility means, matrix states, methodology.
+- [Support matrix](docs/support-matrix.toml): machine-readable declared surface, validated on CI.
+- [Feature inventory](docs/inventory.md): the declared language/compiler surface with upstream evidence.
+- [Syntax notes](docs/syntax-notes.md): lexical/grammar observations from the pinned upstream.
+- [Limitations](docs/limitations.md): current support boundary and known gaps.
+- [Provenance](docs/provenance.md): pinned upstream oracle and licensing guardrails.
+- [PM decisions](docs/decisions.md): ratified product decisions (Q1–Q16).
 
 ## Contributing
 
-Contributions are welcome — open issues and pull requests against
+Contributions are welcome. Open issues and pull requests against
 [`wrightkit/del-rs`](https://github.com/wrightkit/del-rs). Implementation
 sequencing and acceptance criteria live in GitHub issues; durable contracts
 live in `docs/`. Before submitting, run the quality gates above
