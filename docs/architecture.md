@@ -1,17 +1,20 @@
 # del-rs Architecture — Workshop-Independent OSTW/DeltinScript Frontend
 
-Status: **accepted, implementable** · Owner: Architecture · Scope: issues #2–#7 of
-`wrightkit/del-rs`. This document is the authoritative design record for the `del-rs` crate.
-It is written to be implemented as-is; where it says "corpus decides", the #2 inventory and
+Status: **implemented baseline** · Owner: Architecture · Scope: the `del-rs` crate. This
+document is the authoritative design record for the implemented frontend (delivered by issues
+#2–#7, merged via PRs #10–#15). Where it says "corpus decides", the compatibility inventory and
 corpus evidence is the authority, not this document.
 
-Compatibility contract (from #1): `DEL/OSTW source -> source model -> DEL semantic model ->
+Compatibility contract: `DEL/OSTW source -> source model -> DEL semantic model ->
 typed DEL HIR -> [integration boundary] -> workshop-rs`. Compatibility means observable
 semantic compatibility for the declared support surface, not upstream compiler architecture and
-not output-text identity.
+not output-text identity. The contract and its methodology are documented in
+`compatibility.md`.
 
-Companion documents: `roadmap.md` (issue/PR plan and gates), `inventory.md`, `provenance.md`,
-`syntax-notes.md`, `support-matrix.toml` (all produced by #2/#3).
+Companion documents: `compatibility.md` (compatibility contract), `inventory.md` (declared
+surface), `provenance.md` (pinned upstream oracle), `syntax-notes.md` (parser reference),
+`support-matrix.toml` (machine-checkable matrix), `limitations.md` (support boundary),
+`decisions.md` (ratified PM decisions), `README.md` (documentation index).
 
 ---
 
@@ -28,9 +31,9 @@ Companion documents: `roadmap.md` (issue/PR plan and gates), `inventory.md`, `pr
 4. **Diagnostics are structured and stable** (§4): code, severity, message, primary span,
    related spans, file; JSON-serializable.
 5. **Provenance everywhere**: every CST/AST/HIR node carries a `Span` (file + byte range).
-6. **Inventory-backed scope.** Only features inventoried by #2 are implemented. This document
-   sketches the structure for the declared surface; the exact keyword set, quirks, and edge
-   behaviors come from the corpus.
+6. **Inventory-backed scope.** Only features inventoried in the compatibility corpus are
+   implemented. This document describes the structure of the declared surface; the exact
+   keyword set, quirks, and edge behaviors come from the corpus.
 
 ## 2. Key design decisions (summary)
 
@@ -41,47 +44,51 @@ Companion documents: `roadmap.md` (issue/PR plan and gates), `inventory.md`, `pr
 | D3 | **Unresolved Workshop names are legal.** Semantic analysis resolves user declarations first; anything else goes to `WorkshopProvider::resolve`. A permissive `NoopProvider` returns `NotFound`, and the name is typed `External(...)` with structural checks only (arity when the provider says so, otherwise nothing). | #4 acceptance: Workshop-facing names "can remain externally bound/unresolved through a documented provider contract rather than copied catalog data". This lets every real OSTW project parse and check with zero catalog data. |
 | D4 | **Types live in side tables on the semantic program; HIR is a fully typed tree.** `SemanticProgram::types: HashMap<NodeId, Type>`, `resolution: HashMap<NodeId, Resolution>`. HIR nodes carry `ty: Type` inline because HIR is a fresh tree produced by lowering. | AST stays a pure parse artifact (reusable for edits); HIR consumers (oracle, future workshop-rs adapter) get types inline for free. |
 | D5 | **HIR expresses intent, never Workshop encodings.** `new`/`delete` are nodes with lifetime intent; virtual dispatch is `CallTarget::Method { dispatch: Virtual }` (runtime resolves); recursion is legal call-graph cycles with an `is_recursive` storage-intent flag; lambdas are functions with explicit capture lists; global/player/local storage is a `StorageIntent` enum derived from source keywords and rule event context. No slots, no helper rules, no array-of-vector layouts, no reference bit patterns. | #6 non-goals. The oracle (§16) and HIR invariants (§15.4) pin observable intent without encoding it. |
-| D6 | **The semantic oracle is a bounded tree-walking interpreter, not a runtime.** External calls are holes; events never fire; explicit step/recursion limits. | #6 acceptance needs to "distinguish correct/incorrect high-level behavior ... where practical". Bounded scope prevents a second Workshop runtime (roadmap risk 7). |
+| D6 | **The semantic oracle is a bounded tree-walking interpreter, not a runtime.** External calls are holes; events never fire; explicit step/recursion limits. | #6 acceptance needs to "distinguish correct/incorrect high-level behavior ... where practical". Bounded scope prevents a second Workshop runtime. |
 
 ## 3. Compatibility matrix and evidence (`docs/support-matrix.toml`)
 
-Machine-readable, validated by `tests/matrix_check.rs` on every CI run.
+Machine-readable, validated by `tests/matrix.rs` on every CI run.
 
 ```toml
 [meta]
 upstream_repo = "ItsDeltin/Overwatch-Script-To-Workshop"
-upstream_pin = "<commit-or-tag>"        # filled by #2 in docs/provenance.md
-dialect = "ostw"                        # or "deltinscript"; per-dialect evidence allowed
+upstream_pin = "817c1db4bace52123f054ffe10d3d8a06052e687"   # recorded in docs/provenance.md
+dialect = "ostw"
 
-# One entry per tracked capability. id must be unique across the file.
-[[entries]]
-id = "syntax.rule.declaration"
+# One feature per tracked capability. id must be unique across the file.
+[[features]]
+id = "syntax.rules"
+name = "syntax.rules"
 category = "syntax"                     # one of the fixed category set
 state = "frontend-supported"            # one of the fixed state set
 evidence = ["tests/corpus/parser/basic-rule.del"]       # paths relative to repo root; must exist
 notes = "rule: \"name\" with optional sort order, event line, if-conditions; see syntax-notes.md"
 
-[[entries]]
-id = "semantic.class.virtual-dispatch"
+[[features]]
+id = "runtime-semantics.virtual-dispatch"
+name = "runtime-semantics.virtual-dispatch"
 category = "runtime-semantics"
 state = "semantic-supported"
 evidence = ["tests/corpus/highlevel/inheritance-overrides.del"]
 notes = "Dispatch semantics pinned by HIR CallTarget::Virtual + oracle tests; concrete dispatch
 encoding is lowering-dependent."
 
-[[entries]]
-id = "workshop.var-slot-allocation"
+[[features]]
+id = "workshop-lowering.workshop-catalog"
+name = "workshop-lowering.workshop-catalog"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/architecture.md"]     # rationale may cite the architecture doc
+evidence = ["docs/inventory.md"]        # rationale in notes
 notes = "Owned by workshop-rs integration (#8); never modeled in HIR."
 
-[[entries]]
+[[features]]
 id = "editor.codelens"
+name = "editor.codelens"
 category = "editor"
 state = "out-of-scope"
-evidence = ["docs/architecture.md"]
-notes = "VS Code extension behavior; not a del-rs requirement (#2 AC)."
+evidence = ["docs/inventory.md"]
+notes = "VS Code extension behavior; not a del-rs requirement."
 ```
 
 Rules:
@@ -90,18 +97,20 @@ Rules:
   `compiler-utility`, `decompiler`, `editor`, `project`}.
 - `state` ∈ {`planned`, `frontend-supported`, `semantic-supported`, `lowering-dependent`,
   `end-to-end-supported`, `out-of-scope`}.
-- `tests/matrix_check.rs` asserts: file parses; ids unique; every `category`/`state` is in the
-  fixed sets; every `evidence` path exists relative to the repo root; every entry has at least
-  one evidence path; `lowering-dependent` and `out-of-scope` entries carry a rationale in
-  `notes`.
+- `tests/matrix.rs` asserts: file parses; ids unique; every `category`/`state` is in the
+  fixed sets; every `evidence` path exists relative to the repo root; every feature has at
+  least one evidence path; `lowering-dependent` and `out-of-scope` features carry a rationale
+  in `notes`; `workshop-lowering` features never claim a supported state.
 - The same validation is exposed at runtime via `del_rs::matrix::load_and_validate()` and the
   `del-rs matrix --check` CLI command; the matrix is embedded with `include_str!` so the CLI
   works from any directory.
-- #7 gate: no non-Workshop-dependent entry may remain below `frontend-supported` or
-  `semantic-supported`.
+- Current state: the frontend surface (`syntax`, `semantic`, `runtime-semantics`) is fully at
+  `frontend-supported`/`semantic-supported`; the remaining `planned` features are explicitly
+  classified tooling/utility/project items (`compiler-utility`, `decompiler`, `editor` are
+  out-of-scope or planned; see `limitations.md`).
 
-Evidence/provenance guardrails (#2/#3 scope): upstream fixtures are MIT-licensed; every corpus
-fixture carries the header directives `// source: <url@commit>`, `// license: MIT`, and
+Evidence/provenance guardrails: upstream fixtures are MIT-licensed; every corpus fixture
+carries the header directives `// source: <url@commit>`, `// license: MIT`, and
 `// expect: <outcome>` (established convention in `tests/corpus/`); the corpus harness test
 fails on missing source/license directives. Upstream files are copied verbatim with headers;
 del-rs-authored fixtures follow the same header format.
@@ -171,14 +180,11 @@ src/
   bin/del-rs.rs            # CLI (parse/check/inspect/hir/matrix)
 tests/
   parse.rs                 # lexer/parser/AST unit-ish integration tests
-  project.rs               # project loading, imports, cycles, determinism
   semantic.rs              # symbol/type/resolution fixtures
   advanced.rs              # classes/inheritance/generics/lambdas/patterns/recursion
-  hir.rs                   # lowering + validation tests
-  oracle.rs                # oracle behavior tests (high-level semantics)
-  corpus.rs                # corpus harness (walks tests/corpus/)
+  hir.rs                   # lowering + validation + oracle behavior tests
+  corpus.rs                # corpus harness + project/import fixtures (walks tests/corpus/)
   matrix.rs                # support-matrix validation test
-  differential.rs          # upstream differential harness (gated by env var, §19.4)
   cli.rs                   # CLI smoke tests (exit codes, --json schema)
   corpus/                  # fixture tree: .del/.ostw files with // source/ // license/ // expect/ headers
 docs/                      # architecture.md (this file), support-matrix.toml, + #2/#3 docs
@@ -286,7 +292,8 @@ pub fn lex(file: FileId, text: &str) -> (Vec<Token>, Vec<Diagnostic>);
   can shadow them per corpus evidence; see Q-8).
 - Identifiers: `[a-zA-Z0-9_]+` per inventory (`LexController.cs`/`CharData.cs`), authored text
   retained verbatim.
-- Number literals: decimal int, decimal real (`.5`, `1.5`, `1.` per corpus), hex int (corpus).
+- Number literals: decimal int, decimal real (`.5`, `1.5`, `5.` per corpus); no hex, binary,
+  or scientific forms (PM decision Q16; the lexer accepts `\d+`, `\d+\.\d*`, `\.\d+`).
 - Strings: `'...'` and `"..."`, both retained verbatim, with `\` escapes; `@"..."` / `@'...'`
   localized strings (one `Str` token with a `Localized` marker); `$"..."` / `$'...'`
   interpolated strings lex as a `Str` token (`Interpolated`) followed by the token stream of
@@ -497,8 +504,7 @@ pub enum StmtKind {
     Var(VarDecl),                         // local declaration statement
     If { cond: Expr, then: Box<Stmt>, els: Option<Box<Stmt>> },
     While { cond: Expr, body: Box<Stmt> },
-    For(ForStmt),                         // classic for
-    AutoFor(AutoForStmt),                 // for (define = start; end; step) / for (var = ...; ...)
+    For(ForStmt),                         // classic for; auto-for classified semantically (Q14)
     Foreach { var: VarDecl, collection: Expr, body: Box<Stmt> },
     Switch(SwitchStmt),                   // fallthrough semantics (no implicit break)
     Return { value: Option<Expr> },
@@ -510,8 +516,10 @@ pub enum StmtKind {
 }
 
 pub struct ForStmt { pub init: Option<Box<Stmt>>, pub cond: Option<Expr>, pub step: Option<Expr>, pub body: Box<Stmt> }
-pub struct AutoForStmt { pub var: AutoForVar, pub start: Expr, pub end: Expr, pub step: Expr, pub body: Box<Stmt> }
-pub enum AutoForVar { Declare { ty: Option<TypeRef> }, Existing(Ident) }   // corpus: Q-15
+// Auto-for (`for (define = start; end; step)` / `for (var = start; end; step)`) is one classic
+// `for` grammar; a `for` whose iterator slot is an expression statement is classified as
+// auto-for during semantic analysis (PM decision Q14), and the target may be a member
+// expression lvalue (`HostPlayer().a`).
 pub struct SwitchStmt { pub scrutinee: Expr, pub arms: Vec<SwitchArm> }
 pub struct SwitchArm { pub label: Option<Expr>, pub stmts: Vec<Stmt> }     // `default` arm => label None
 ```
@@ -665,12 +673,13 @@ pub fn load_project(opts: ProjectOptions) -> Project;    // total; errors become
   root that are not imported are **not** compiled (matches upstream: compile the file you open,
   or `ds.toml` `entry_point`).
 - **Import resolution**: the import path is a string literal, resolved **relative to the
-  importing file's directory**. If the literal has no extension, try `<path>.del`, `<path>.ostw`
-  (per corpus; Q-3). `"!path"` imports resolve against the bundled Modules directory
+  importing file's directory**, exactly as written — there is no `.del`/`.ostw` extension
+  fallback (PM decision Q3). `"!path"` imports resolve against the bundled Modules directory
   (`ImportKind::BundledModule` — resolution target is a corpus/inventory question, Q-4).
   `.json` (custom game settings) and `.lobby` imports are recorded with their kinds and skipped
   by the front end (matrix: `workshop-lowering`/`compiler-utility`). `import "x" as name`
-  parses; the `as` binding's namespace semantics are corpus-gated (`planned`, Q-4).
+  parses; the `as` binding is inert for source imports (PM decision Q4) and its `.json`
+  variable-binding semantics are corpus-gated (`planned`).
 - **Cycle detection**: DFS with an in-progress stack; a back edge emits `PJ001` "import cycle:
   a -> b -> a" with the cycle path as related spans, and the file is still loaded once (its
   items remain; no infinite recursion).
@@ -954,7 +963,7 @@ pub fn resolve_call(
 - Statement-position calls to external names resolve through
   `ExternalPosition::Action`; expression positions through `ExternalPosition::Value`.
 - Generic functions: explicit `None<Number>()` type args; inference from argument types when
-  unambiguous (corpus; Q-15); `single` bound constraints enforced on instantiation (`SM014`).
+  unambiguous (PM decision Q15); `single` bound constraints enforced on instantiation (`SM014`).
 
 ### 13.7 Constants and assignment legality
 
@@ -971,7 +980,7 @@ pub fn resolve_call(
 
 ### 13.8 Rules and events
 
-- Rule name literal (required per corpus; Q-13), optional sort order int, optional event
+- Rule name literal (required per corpus; PM decision Q13), optional sort order int, optional event
   expression, condition chain (each must be `Bool`/`Any`-compatible — `SM019`), body block.
 - Event context → rule-level variable storage: `Global` when the rule has no event line or the
   provider reports `EventContext::Global`; `Player` for `EventContext::Player`. Unknown →
@@ -1448,35 +1457,35 @@ impl<'a> Oracle<'a> {
 
 ```rust
 // api.rs — the stable, documented surface for Wright and other consumers.
-// Everything is re-exported at the crate root (del_rs::...).
+// The facade lives in del_rs::api; the underlying phases are also reachable
+// directly (del_rs::syntax::parse_source, del_rs::project::load_project,
+// del_rs::semantic::check_project, del_rs::hir::lower::lower).
 
 // ---- parsing ----
-pub fn parse_source(file: FileId, text: &str) -> ParseOutput;
+pub fn parse_source_file(file: FileId, text: &str) -> ParseOutput;
 pub struct ParseOutput { pub tokens: Vec<Token>, pub ast: AstFile, pub diagnostics: Vec<Diagnostic> }
 
 // ---- projects ----
-pub fn load_project(opts: ProjectOptions) -> Project;              // diagnostics on Project
+pub fn load_project_api(opts: ProjectOptions) -> Project;          // diagnostics on Project
 pub fn project_files(project: &Project) -> impl Iterator<Item = FileId> + '_; // deterministic order
 
 // ---- semantic ----
-pub fn check_project(project: &Project, provider: &dyn WorkshopProvider) -> SemanticProgram;
+pub fn check_project_api(project: &Project, provider: &dyn WorkshopProvider) -> SemanticProgram;
+pub fn check_project_default(project: &Project) -> SemanticProgram; // NoopProvider
 
 // ---- HIR ----
 pub fn lower_to_hir(program: &SemanticProgram) -> (HirProgram, Vec<Diagnostic>);
 pub fn validate_hir(hir: &HirProgram) -> Vec<Diagnostic>;
 
-// ---- queries (over SemanticProgram and/or HirProgram) ----
+// ---- queries (over SemanticProgram) ----
 pub fn symbol_at(program: &SemanticProgram, file: FileId, offset: u32) -> Option<SymbolId>;
 pub fn references(program: &SemanticProgram, symbol: SymbolId) -> Vec<Span>;          // uses resolution table
 pub fn type_at(program: &SemanticProgram, file: FileId, offset: u32) -> Option<Type>;
 pub fn resolution_at(program: &SemanticProgram, file: FileId, offset: u32) -> Option<Resolution>;
 pub fn declaration(program: &SemanticProgram, symbol: SymbolId) -> Option<&Symbol>;
-pub fn symbol_of_node(program: &SemanticProgram, node: NodeId) -> Option<SymbolId>;
-pub fn hir_func_at(hir: &HirProgram, file: FileId, offset: u32) -> Option<HirFuncId>;
-pub fn hir_span_of(hir: &HirProgram, func: HirFuncId) -> Option<Span>;
 
 // ---- oracle ----
-pub fn run_oracle(hir: &HirProgram, entry: OracleEntry, opts: OracleOptions) -> OracleResult;
+pub fn run_oracle_api(hir: &HirProgram, entry: OracleEntry, opts: OracleOptions) -> OracleResult;
 pub struct OracleEntry { pub func: HirFuncId, pub args: Vec<OracleValue> }
 pub struct OracleResult { pub value: Option<OracleValue>, pub error: Option<OracleError>, pub diagnostics: Vec<Diagnostic>, pub steps: u64 }
 
@@ -1485,9 +1494,9 @@ pub struct CheckReport { pub project: Project, pub semantic: SemanticProgram, pu
 pub fn check_path(path: &Path, provider: &dyn WorkshopProvider) -> CheckReport;  // parse+project+semantic+hir+validate
 
 // ---- matrix ----
-pub fn load_matrix() -> Result<SupportMatrix, MatrixError>;       // include_str!("../docs/support-matrix.toml")
-pub fn matrix_entries(matrix: &SupportMatrix) -> impl Iterator<Item = &MatrixEntry> + '_;
+pub fn load_matrix() -> Result<SupportMatrix, toml::de::Error>;    // include_str!("../docs/support-matrix.toml")
 pub fn matrix_status(matrix: &SupportMatrix, category: Category) -> Vec<&MatrixEntry>;
+// del_rs::matrix::load_and_validate() performs the mechanical validation used by the CLI.
 ```
 
 `diagnostics(program: &SemanticProgram) -> &[Diagnostic]` and `diagnostics(hir) -> ...` are
@@ -1502,10 +1511,10 @@ serializes diagnostics only (AST/HIR are programmatic, not wire formats).
 
 | Command | Args | Behavior |
 |---|---|---|
-| `parse <file>` | `--json` | Lex + parse; print diagnostics (human or JSON); print AST node count / structure summary |
-| `check <file-or-dir>` | `--root <dir>`, `--provider <name>` (default `none`), `--json` | Full pipeline (parse → project → semantic → HIR → validate); aggregated diagnostics; summary of phases run |
+| `parse <file>` | `--json` | Lex + parse; print diagnostics (human or JSON); print AST/token summary |
+| `check <file-or-dir>` | `--json` | Full pipeline (parse → project → semantic → HIR → validate); aggregated diagnostics; summary of phases run |
+| `hir <file-or-dir>` | `--json` | Lower + validate; print HIR summary (funcs/rules/classes/enums/vars/exprs); JSON reports validation diagnostics |
 | `inspect <file> <line>:<col>` | `--json` | Query symbol/type/resolution at position (via `symbol_at`/`type_at`/`resolution_at`) |
-| `hir <file-or-dir>` | `--json`, `--dump` | Lower + validate; `--dump` prints a structural HIR walk (funcs/classes/vars/rules counts and per-func bodies); JSON reports validation diagnostics |
 | `matrix` | `--json`, `--check` | Print/validate the embedded support matrix; `--check` exits 1 on invalid matrix |
 | `--version`, `--help` | | Standard |
 
@@ -1519,7 +1528,7 @@ Exit codes (documented, stable, tested by `tests/cli.rs`):
 | 3 | internal error (unexpected panic is caught, message printed, code 3) |
 | 4 | I/O error (missing file, unreadable directory) |
 
-`--json` prints exactly one JSON document to stdout: `{ "command": ..., "phase": ..., "diagnostics": [...], "summary": {...} }` with stable field names; human output goes to stderr for diagnostics and stdout for results. The CLI never requires a Workshop backend; `--provider none` is the only provider in this crate (the flag reserves the extension point for later providers without changing the contract).
+`--json` prints exactly one JSON document to stdout: `{ "command": ..., "phase": ..., "diagnostics": [...], "summary": {...} }` with stable field names; human output goes to stderr for diagnostics and stdout for results. The CLI never requires a Workshop backend; `--provider none` (the `NoopProvider`) is the only provider in this crate.
 
 ## 19. Test strategy
 
@@ -1530,17 +1539,19 @@ Exit codes (documented, stable, tested by `tests/cli.rs`):
 - `parser`: positive/negative fixture files under `tests/corpus/`; unit tests for recovery
   (unbalanced delimiters, garbage between items, unterminated constructs) asserting
   diagnostics + non-empty partial AST + zero panics.
-- `project`: import resolution (relative paths, extension defaults), cycles (`PJ001`), missing
+- `project`: import resolution (exact path as written), cycles (`PJ001`), missing
   files (`PJ002`), duplicates, determinism (same tree twice ⇒ identical FileId order),
-  `ds.toml` entry point.
+  `ds.toml` entry point — exercised in `tests/corpus.rs` (project fixtures) and the
+  project-driven integration tests.
 - `semantic`: per-construct positive/negative fixtures (declarations, scopes, access,
   conversions, operators, calls, defaults, named args, overloads, constants, rules/events,
-  playervar access, pattern matching, generics, recursion legality).
+  playervar access, pattern matching, generics, recursion legality) in `tests/semantic.rs`
+  and `tests/advanced.rs`.
 - `hir`: lowering completeness (every AST construct lowers), provenance spot-checks
-  (span equality node-to-node), `validate` triggers per `HI` code.
+  (span equality node-to-node), `validate` triggers per `HI` code — in `tests/hir.rs`.
 - `oracle`: high-level behavior cases (class identity, virtual dispatch, new/delete +
   stale-reference, by-value vs by-reference captures, recursion, arrays + builtin members,
-  switch fallthrough, struct value copies).
+  switch fallthrough, struct value copies) — in `tests/hir.rs` (§19.5).
 
 ### 19.2 Corpus harness (`tests/corpus.rs`)
 
@@ -1569,7 +1580,7 @@ Semantics of `expect`:
 - `ok` — no `Error` diagnostics at the declared stage (`parse-error`-free parse for `ok`);
 - `parse-error` / `semantic-error` / `hir-error` — at least one `Error` diagnostic at that
   stage (and none at earlier stages, to keep expectations precise);
-- `unknown` — run, record, do not assert (exploration marker; must be resolved before #7).
+- `unknown` — run, record, do not assert (exploration marker).
 
 - The harness walks all `tests/corpus/**/*.{del,ostw,workshop}`, runs the pipeline stage the
   directive names, and compares outcomes. It also asserts `source` + `license` are present and
@@ -1577,7 +1588,7 @@ Semantics of `expect`:
 - Corpus counts and per-case results are printed by the test for CI dashboards.
 - Multi-file/import cases: `// entry:` names the entry; imported sibling files carry their own
   directives; the harness checks the declared `expect` on the entry's pipeline outcome.
-- Oracle-driven behavior cases are Rust tests in `tests/oracle.rs` (§19.5), not fixtures —
+- Oracle-driven behavior cases are Rust tests in `tests/hir.rs` (§19.5), not fixtures —
   they need explicit driver code and asserted values.
 
 ### 19.3 Matrix check (`tests/matrix.rs`)
@@ -1586,96 +1597,61 @@ Validates `docs/support-matrix.toml` per §3 rules; fails CI on invalid states/c
 duplicate ids, missing evidence paths, or missing rationale on `lowering-dependent` /
 `out-of-scope` entries.
 
-### 19.4 Differential harness (`tests/differential.rs`, gated)
+### 19.4 Differential methodology (gated, not part of CI)
 
-Enabled only when `DEL_RS_UPSTREAM_BIN` env var points at a pinned upstream build (recorded in
-`docs/provenance.md`); skipped otherwise (CI stays green without it).
-
-- Per corpus case: run upstream on the case; compare **accept/reject agreement** and
-  **diagnostic-presence agreement** (which constructs upstream rejects that we accept, and
-  vice versa). No output-text identity, ever.
-- Output: a report listing divergences grouped by matrix entry; divergences are tracked in the
-  matrix notes until resolved. This is a gap-discovery tool for #7's completeness drive, not a
-  merge gate.
+Comparing accept/reject and diagnostic-presence agreement against a pinned upstream build is
+the defined gap-discovery methodology for matrix entries. It is not a CI merge gate: it
+requires a pinned upstream build (see `docs/provenance.md`), and the standing accept/reject
+record is the corpus harness's `// expect:` outcomes. No output-text identity, ever.
+Divergences are tracked against the matrix entries they affect.
 
 ### 19.5 Oracle-driven behavior tests
 
-`tests/oracle.rs` drives `run_oracle`/`Oracle::call` directly (not through fixtures) for
+`tests/hir.rs` drives `run_oracle`/`Oracle::call` directly (not through fixtures) for
 behavioral assertions: e.g. virtual dispatch chooses the runtime class; deleting an object and
 then reading a field yields `Undefined` + `OR` diagnostic; a by-value capture snapshot does
 not observe later outer-variable writes while by-reference capture does; recursion computes
 factorial/fibonacci within limits; struct assignment copies values while class assignment
 aliases.
 
-## 20. Implementation order (for the engineer)
+## 20. Implementation history
 
-Milestones aligned to issues; each milestone ends with green CI and its gate from `roadmap.md`
-§5. Hard edges: #2 syntax inventory → parser; #3 → #4 → #5 → #6 → #7 (roadmap §2).
+The frontend was delivered by issues #2–#7 as a strict dependency-ordered stack, merged into
+`main` via PRs #10–#15. The milestone plan (M0 inventory/corpus → M1 frontend bootstrap → M2
+semantic core → M3 advanced semantics → M4 typed HIR → M5 completeness/APIs/CLI), the
+parallelization windows, the branch plan, and the per-issue validation gates are historical
+implementation metadata preserved in GitHub issue/PR history; they are not part of the
+product documentation surface.
 
-| Milestone | Issue | Modules (dependency order) | Exit gate |
-|---|---|---|---|
-| M0 | #2 | `.upstream-refs/` pin, `docs/provenance.md`, `docs/inventory.md`, `docs/support-matrix.toml` v1, corpus scaffolding, `matrix.rs` + `tests/matrix.rs`, harness skeleton | matrix-check green; pin recorded; fixtures licensed/evidenced |
-| M1 | #3 | `span.rs` → `syntax/token.rs` → `syntax/lexer.rs` → `syntax/ast.rs` → `syntax/parser.rs` (incl. vanilla-rule/vanilla-context parsing, opaque sections) → `project.rs` → `bin/del-rs.rs` (`parse`) → parse fixtures | #3 gates: fixtures pass, recovery corpus zero-panics, project determinism tests, no workshop-rs dep |
-| M2 | #4 | `diagnostics.rs` registry → `semantic/provider.rs` (+`NoopProvider`) → `semantic/symbols.rs` → `semantic/types.rs` → `semantic/resolve.rs` → `semantic/check.rs` (core: vars, functions, rules, operators, conversions, overloads, named/default args, assignments, constants) → CLI `check` → semantic fixtures | #4 gates: pos/neg fixtures, span/provenance tests, provider-boundary test, matrix updates |
-| M3 | #5 | extend `symbols/types/resolve/check` with classes/structs/enums/inheritance/virtual/constructors → generics + `single` bound → lambdas/function values/captures → `is` patterns → recursion legality (SCC) → struct `ref`-method guards → interaction fixtures (no abstract: not in pinned surface) | #5 gates: per-feature + interaction suites, inspectability tests, no encoding types in API |
-| M4 | #6 | `hir/mod.rs` node definitions → `hir/lower.rs` → `hir/validate.rs` (HI codes) → `hir/oracle.rs` (+OR codes) → CLI `hir` → oracle/hir tests | #6 gates: lowering coverage, provenance checks, validation triggers, oracle behavior tests |
-| M5 | #7 | `api.rs` stabilization + queries, CLI `inspect`/`matrix`, completeness drive (all non-lowering entries ≥ `semantic-supported`), known-limitations doc, `tests/differential.rs`, final QA | #7 gates: matrix-completeness check, API/doctests, CLI smoke, representative multi-file projects reach semantic/HIR |
+## 21. Ratified design questions
 
-Notes:
+Design questions Q1–Q16 raised while writing this document were resolved against the pinned
+upstream and ratified by PM in `docs/decisions.md` (2026-08-16); the decisions are binding and
+the relevant sections above already reflect them. Highlights:
 
-- M0/M1 overlap window (roadmap W1): crate bootstrap can start before the inventory finishes;
-  the parser only targets inventoried syntax.
-- W4: CLI skeleton lands in M1 and grows; never blocks semantic work.
-- W6: oracle design notes during M3 so M4's oracle is not designed from scratch.
-- Matrix updates are continuous: each milestone flips its entries' states with evidence.
-
-## 21. Open questions for PM/engineer before implementation
-
-Resolved from the inventory while writing this document: no `abstract` keyword (Q: planned
-state); `.del`/`.ostw`/`.workshop` extensions accepted; `switch` has `default`; `:`-init
-variables are immutable; lambda captures are by-value + read-only in the pinned corpus.
-
-1. **Lambda capture dialect.** The pinned corpus is by-value + read-only (inventory
-   `semantic.lambda-capture`), so that is the default. The task brief mentioned by-reference
-   capture "per DeltinScript behavior" — confirm whether a future dialect switch is wanted;
-   the model/oracle support both, but only ByValue is implemented initially.
-2. **`in` parameter assignability.** Corpus docs are silent; C# convention says read-only.
-   Default: `SM017` error; corpus evidence may flip it.
-3. **Import extension resolution.** `import "x"` without extension: try `.del` then `.ostw`?
-   Does upstream require the extension?
-4. **`import "x" as name` and `!` bundled-module imports.** What are the observable namespace
-   semantics of `as`; where does the bundled Modules directory resolve from? (`planned` until
-   corpus evidence.)
-5. **`import("file.json")` expression semantics** (JSON data import with `as` binding):
-   parse-only in M1; semantic behavior `planned`.
-6. **Named + positional args mixing.** Exact filling rule (positional-then-named, or
-   source-order matching)?
-7. **`const` scope.** Const function types only, or const variables/params too?
-8. **Type-name shadowing.** Can a user class be named `Number`/`Boolean`/`Any`? Upstream
-   behavior needed for the resolution table.
-9. **`Players` type.** Exists in the task type list; no corpus evidence found. Planned state?
-10. **`interface` keyword.** `class B : A, OtherInterface` syntax exists in the inventory, but
-    interface semantics evidence is thin. Keep `planned` until corpus shows behavior?
-11. **Union types `T | U`.** Parsed (per inventory `syntax.types`); assignability/member
-    semantics `planned` — corpus evidence needed before `semantic-supported`.
-12. **Default visibility** of class members without an access modifier.
-13. **Rule name optionality** (`rule { ... }` without a name).
-14. **Auto-for exact grammar** (`for (define = s; e; st)` / `for (var = s; e; st)`) edge cases.
-15. **Generic inference depth** — explicit type args only, or argument-based inference?
-16. **Hex/number literal forms** — hex ints and any suffixes confirmed by the inventory's
-    `MatchNumber`; exact accepted forms to record in `syntax-notes.md`.
+- By-value read-only lambda captures (Q1); `in` params are read-only (`SM017`, Q2);
+- imports resolve exactly as written with no extension fallback (Q3, applied in §11);
+- `as` bindings are inert for source imports (Q4); JSON imports parse-only (Q5);
+- positional-then-named argument filling (Q6); `const` on function types only (Q7);
+- user types shadow builtins (Q8); `Players` reserved and unexercised (Q9);
+- no `interface` keyword; extra `class B : A, X` types are parsed and inert (Q10);
+- union types parse-only (`planned`, Q11); default member visibility is `Public` (Q12);
+- rule names are required (Q13); auto-for is classic-`for` classification (Q14, §9);
+- explicit generic type args, inference only when unambiguous (Q15);
+- decimal-only number literals (Q16, applied in §7).
 
 ## 22. Durable decision record
 
-This document is the decision record for issues #2–#7. D1–D6 (§2) are the architecture-level
-decisions. When the workshop-rs integration (#8) begins, the provider contract (§12) and HIR
-boundary (§15) are the two seams to formalize in an ADR with workshop-rs; nothing in this
-document is contingent on those future decisions beyond the documented seams.
+This document is the decision record for the implemented frontend. D1–D6 (§2) are the
+architecture-level decisions. When the workshop-rs integration (#8) begins, the provider
+contract (§12) and HIR boundary (§15) are the two seams to formalize in an ADR with
+workshop-rs; nothing in this document is contingent on those future decisions beyond the
+documented seams.
 
 ---
 
-Appendix: upstream surface evidence used for the sketches (pinned wiki + the #2 inventory in
-`docs/inventory.md`, to be re-verified against the pinned commit): rule headers with sort
+Appendix: upstream surface evidence used for the design (pinned wiki + the #2 inventory in
+`docs/inventory.md`, verified against the pinned commit): rule headers with sort
 order, `disabled`, `setting.X`, event lines and `if` conditions; vanilla rules and
 workshop-context blocks; `globalvar`/`playervar`/`define` and typed declarations; `!` extended
 collection; `in`/`ref`/`const` params; defaults + named args; expression-bodied functions and

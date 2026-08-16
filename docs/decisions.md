@@ -248,5 +248,6 @@ Where evidence is absent, the permissive/`planned` default applies and is marked
 | 16 | `syntax.numbers` | `planned` (decimal-only at M1) |
 
 No matrix entry changes state in this document; all entries remain `planned` as filed.
-State flips happen at M1/M2 milestones with fixture evidence, per roadmap gates. Two
-architecture.md corrections are recorded (Q3 extension fallback; Q16 hex claim).
+State flips happen at M1/M2 milestones with fixture evidence, per the milestone gates recorded
+in GitHub issue/PR history. Two architecture.md corrections are recorded (Q3 extension
+fallback; Q16 hex claim).
