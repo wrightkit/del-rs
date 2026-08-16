@@ -46,8 +46,11 @@ fn print_help() {
 Usage: del-rs <command> [args]\n\
 \n\
 Commands:\n\
-  parse <file> [--json]     Lex + parse a file; print diagnostics and an AST summary\n\
-  matrix [--check] [--json] Print or validate the embedded compatibility matrix\n\
+  parse <file> [--json]            Lex + parse a file; print diagnostics and an AST summary\n\
+  check <file-or-dir> [--json]     Full pipeline: parse, project, semantic, HIR, validate\n\
+  hir <file-or-dir> [--json]       Lower to HIR and validate; print a HIR summary\n\
+  inspect <file> <line>:<col> [--json]  Query symbol / type / resolution at a position\n\
+  matrix [--check] [--json]        Print or validate the embedded compatibility matrix\n\
   --version, --help\n\
 \n\
 Exit codes: 0 success, 1 errors found, 2 usage error, 3 internal error, 4 I/O error"
