@@ -1,0 +1,15 @@
+# Dependabot version updates for del-rs.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  # Rust crate: the root manifest governs the whole crate.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+
+  # CI workflows and their action pins.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
