@@ -1,0 +1,20 @@
+[package]
+name = "del-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+description = "Workshop-independent OSTW/DeltinScript-compatible frontend: lexer, recoverable parser, project model, semantic analysis, typed HIR, and tooling APIs"
+repository = "https://github.com/wrightkit/del-rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+[[bin]]
+name = "del-rs"
+path = "src/bin/del-rs.rs"
+
+[profile.release]
+lto = true
