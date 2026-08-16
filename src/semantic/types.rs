@@ -55,6 +55,25 @@ pub struct ExternalType {
     pub constant: bool,
 }
 
+/// Primitive type table (also used by the HIR lowerer).
+pub fn primitive(name: &str) -> Option<Type> {
+    Some(match name {
+        "Number" => Type::Number,
+        "String" => Type::String,
+        "Boolean" | "Bool" => Type::Bool,
+        "Any" => Type::Any,
+        "void" => Type::Void,
+        "Vector" => Type::Vector,
+        "Team" => Type::Team,
+        "Hero" => Type::Hero,
+        "Player" => Type::Player,
+        "Players" => Type::Players,
+        "Color" => Type::Color,
+        "null" => Type::Null,
+        _ => return None,
+    })
+}
+
 impl Type {
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)

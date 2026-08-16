@@ -58,6 +58,12 @@ pub struct SemanticProgram {
     pub init_scopes: HashMap<NodeId, ScopeId>,
     /// Symbol ids of top-level variables with initializers.
     pub init_symbols: HashMap<NodeId, SymbolId>,
+    /// Declaration-node -> symbol id maps (used by the HIR lowerer).
+    pub var_symbols: HashMap<NodeId, SymbolId>,
+    pub function_symbols: HashMap<NodeId, SymbolId>,
+    pub type_symbols: HashMap<NodeId, SymbolId>,
+    /// Parsed ASTs per file (single parse; node ids match types/resolution).
+    pub asts: HashMap<FileId, crate::syntax::ast::AstFile>,
 }
 
 pub fn check_project(project: &Project, provider: &dyn WorkshopProvider) -> SemanticProgram {
@@ -156,6 +162,10 @@ impl<'a> Builder<'a> {
             ret_of_body: self.ret_of_body,
             init_scopes: self.init_scopes,
             init_symbols: self.init_symbols,
+            var_symbols: self.var_symbols,
+            function_symbols: self.function_symbols,
+            type_symbols: self.type_symbols,
+            asts: self.file_asts.into_iter().zip(project.files.iter().copied()).map(|(a, f)| (f, a)).collect(),
         }
     }
 
@@ -797,42 +807,6 @@ impl<'a> Builder<'a> {
             let calls = self.body_callee_names(nid);
             callees.insert(sid, calls);
         }
-        // DFS cycle detection over the call graph.
-        let mut state: HashMap<SymbolId, u8> = HashMap::new(); // 0=unvisited,1=in-progress,2=done
-        fn dfs(
-            cur: SymbolId,
-            callees: &HashMap<SymbolId, Vec<String>>,
-            name_of: &dyn Fn(SymbolId) -> String,
-            state: &mut HashMap<SymbolId, u8>,
-            stack: &mut Vec<SymbolId>,
-            on_cycle: &mut dyn FnMut(&[SymbolId]),
-        ) {
-            match state.get(&cur) {
-                Some(2) => return,
-                Some(1) => {
-                    if let Some(pos) = stack.iter().position(|s| *s == cur) {
-                        on_cycle(&stack[pos..]);
-                    }
-                    return;
-                }
-                _ => {}
-            }
-            state.insert(cur, 1);
-            stack.push(cur);
-            if let Some(calls) = callees.get(&cur) {
-                let ids: Vec<SymbolId> = calls.iter().filter_map(|c| {
-                    let _ = name_of;
-                    None
-                }).collect();
-                let _ = ids;
-                for c in calls.clone() {
-                    let _ = c;
-                }
-            }
-            stack.pop();
-            state.insert(cur, 2);
-        }
-        let _ = &mut dfs;
         // Resolve names to symbol ids.
         let mut resolved: HashMap<SymbolId, Vec<SymbolId>> = HashMap::new();
         for (sid, calls) in &callees {
@@ -1148,7 +1122,9 @@ impl<'a> Builder<'a> {
             )
         })
     }
+}
 
+impl SemanticProgram {
     pub fn type_symbol_of(&self, nid: NodeId) -> Option<SymbolId> {
         self.type_symbols.get(&nid).copied()
     }
@@ -1159,6 +1135,37 @@ impl<'a> Builder<'a> {
 
     pub fn var_symbol_of(&self, nid: NodeId) -> Option<SymbolId> {
         self.var_symbols.get(&nid).copied()
+    }
+
+    /// Project-wide type lookup by name (scope chain then file scopes).
+    pub fn lookup_type_symbol(&self, name: &str) -> Option<SymbolId> {
+        let ids = self.tables.lookup(self.tables.root_scope, name);
+        if let Some(id) = ids.into_iter().find(|id| {
+            matches!(
+                self.tables.symbol(*id).kind,
+                SymbolKind::Class | SymbolKind::Struct | SymbolKind::Enum | SymbolKind::TypeParam
+            )
+        }) {
+            return Some(id);
+        }
+        for scope in &self.tables.scopes {
+            if scope.kind == ScopeKind::File {
+                if let Some(ids) = scope.entries.get(name) {
+                    if let Some(id) = ids.iter().copied().find(|id| {
+                        matches!(
+                            self.tables.symbol(*id).kind,
+                            SymbolKind::Class
+                                | SymbolKind::Struct
+                                | SymbolKind::Enum
+                                | SymbolKind::TypeParam
+                        )
+                    }) {
+                        return Some(id);
+                    }
+                }
+            }
+        }
+        None
     }
 }
 

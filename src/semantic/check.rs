@@ -4,7 +4,7 @@
 //! lives here alongside checking (documented simplification of the module
 //! layout in docs/architecture.md §5).
 
-use crate::diagnostics::{error, Diagnostic, Phase};
+use crate::diagnostics::{error, Phase};
 use crate::semantic::*;
 use crate::semantic::provider::*;
 use crate::semantic::resolve::{BuiltinMember, Resolution};
@@ -207,7 +207,7 @@ impl<'a> Checker<'a> {
     // ------------------------------------------------------------------
 
     pub fn check_all(&mut self) {
-        let bodies: Vec<(NodeId, ScopeId)> = self
+        let mut bodies: Vec<(NodeId, ScopeId)> = self
             .program
             .node_scopes
             .iter()
@@ -219,6 +219,7 @@ impl<'a> Checker<'a> {
             })
             .map(|(n, s)| (*n, *s))
             .collect();
+        bodies.sort_by_key(|(n, _)| n.0);
         for (body_node, scope) in bodies {
             let kind = self.program.tables.scope(scope).kind;
             if std::env::var("DEL_DEBUG").is_ok() {
@@ -284,10 +285,9 @@ impl<'a> Checker<'a> {
 
     fn collect_enum_keys(&mut self) -> Vec<(Expr, bool)> {
         let mut out = Vec::new();
-        for &file in &self.program.project.files {
-            let text = self.program.project.sources.text(file).to_string();
-            let parsed = crate::syntax::parse_source(file, &text);
-            for item in &parsed.ast.items {
+        for file in &self.program.project.files {
+            let Some(parsed) = self.program.asts.get(file) else { continue };
+            for item in &parsed.items {
                 if let ItemKind::TypeDecl(t) = &item.kind {
                     if t.kind != TypeDeclKind::Enum {
                         continue;
@@ -306,10 +306,9 @@ impl<'a> Checker<'a> {
     }
 
     fn find_var_init(&mut self, nid: NodeId) -> Option<(InitKind, Expr)> {
-        for &file in &self.program.project.files {
-            let text = self.program.project.sources.text(file).to_string();
-            let parsed = crate::syntax::parse_source(file, &text);
-            for item in &parsed.ast.items {
+        for file in &self.program.project.files {
+            let Some(parsed) = self.program.asts.get(file) else { continue };
+            for item in &parsed.items {
                 if let ItemKind::Var(v) = &item.kind {
                     if v.name.id == nid {
                         return v.init.clone();
@@ -373,12 +372,12 @@ impl<'a> Checker<'a> {
 
     fn collect_rules(&self) -> Vec<(NodeId, RuleDecl)> {
         let mut out = Vec::new();
-        for &file in &self.program.project.files {
-            let text = self.program.project.sources.text(file).to_string();
-            let parsed = crate::syntax::parse_source(file, &text);
-            for item in &parsed.ast.items {
-                if let ItemKind::Rule(r) = &item.kind {
-                    out.push((item.id, r.clone()));
+        for file in &self.program.project.files {
+            if let Some(ast) = self.program.asts.get(file) {
+                for item in &ast.items {
+                    if let ItemKind::Rule(r) = &item.kind {
+                        out.push((item.id, r.clone()));
+                    }
                 }
             }
         }
@@ -414,10 +413,9 @@ impl<'a> Checker<'a> {
     }
 
     fn collect_body_stmts(&self, body_node: NodeId) -> Vec<Stmt> {
-        for &file in &self.program.project.files {
-            let text = self.program.project.sources.text(file).to_string();
-            let parsed = crate::syntax::parse_source(file, &text);
-            for item in &parsed.ast.items {
+        for file in &self.program.project.files {
+            let Some(parsed) = self.program.asts.get(file) else { continue };
+            for item in &parsed.items {
                 match &item.kind {
                     ItemKind::Function(f) if f.name.id == body_node => {
                         return body_stmts(f.body.clone());
@@ -1451,6 +1449,9 @@ impl<'a> Checker<'a> {
 
     fn check_ident(&mut self, expr: &Expr, ident: &Ident) -> Type {
         let ids = self.program.tables.lookup(self.scope(), &ident.name);
+        if ident.name == "cam" && std::env::var("DEL_DEBUG").is_ok() {
+            eprintln!("check_ident cam node {} span {}..{} ids={} -> {:?}", expr.id.0, expr.span.start, expr.span.end, ids.len(), ids.first());
+        }
         if let Some(&first) = ids.first() {
             let ty = self.program.tables.symbol(first).ty.clone();
             self.record(expr, ty.clone(), Some(Resolution::Symbol(first)));
@@ -1846,6 +1847,9 @@ impl<'a> Checker<'a> {
                     .collect();
                 if !funcs.is_empty() {
                     if let Some(sid) = self.resolve_overload(&funcs, call, &arg_types, expr.span) {
+                        self.program
+                            .resolution
+                            .insert(call.callee.id, Resolution::Symbol(sid));
                         let sym = self.program.tables.symbol(sid).clone();
                         if sym.flags.ref_ && !self.ref_context && self.cur_function.is_some() {
                             self.err(
@@ -2255,12 +2259,11 @@ impl<'a> Checker<'a> {
     }
 
     fn param_info_inner(&mut self, sid: SymbolId) -> (Vec<String>, Vec<bool>) {
-        // Look up the FunctionDecl/ConstructorDecl by symbol id.
-        for &file in &self.program.project.files {
-            let text = self.program.project.sources.text(file).to_string();
-            let parsed = crate::syntax::parse_source(file, &text);
-            if let Some(info) = find_param_info(&parsed.ast, sid, &self.program) {
-                return info;
+        for file in &self.program.project.files {
+            if let Some(parsed) = self.program.asts.get(file) {
+                if let Some(info) = find_param_info(parsed, sid, &self.program) {
+                    return info;
+                }
             }
         }
         (Vec::new(), Vec::new())

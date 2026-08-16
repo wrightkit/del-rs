@@ -63,7 +63,13 @@ pub fn load_project(opts: ProjectOptions) -> Project {
         .entry
         .or_else(|| opts.config.as_ref().and_then(|c| c.entry_point.clone()))
         .unwrap_or_else(|| PathBuf::from("main.del"));
-    let entry_abs = loader.resolve_path(&entry_path);
+    let entry_abs = if entry_path.is_absolute()
+        || entry_path.starts_with(&opts.root)
+    {
+        entry_path
+    } else {
+        loader.resolve_path(&entry_path)
+    };
 
     let entry_id = loader.load_file(&entry_abs, None);
     // Post-order: the entry file itself is appended after its imports.
