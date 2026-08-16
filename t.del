@@ -1,2 +1,0 @@
-globalvar Node[] Nodes = [];
-Node GetClosestNode(): Nodes.SortedArray((Node node) => EyePosition().DistanceTo(node.ShownLocation))[0];
