@@ -16,6 +16,12 @@ Each fixture has an independent evidence classification:
 | `semantic-contract` | The expectation is defined by a documented DEL/OSTW semantic contract. |
 | `internal-invariant` | The assertion is explicitly about a del-rs representation invariant, not upstream compatibility. |
 
+For `pinned-oracle` and `real-project` cases, the report requires the
+`// source:` URL to point at the repository and commit recorded in the support
+matrix. This keeps a later fixture refresh from silently changing the oracle
+behind an existing expectation. Other evidence classes may point at their own
+documented contract source.
+
 Existing fixtures with a pinned `// source:` URL are classified as
 `pinned-oracle` automatically; files under `tests/corpus/projects/` are
 classified as `real-project`. A fixture may override this with
@@ -29,6 +35,10 @@ matched case because the current implementation happens to agree with it.
 Optional `// matrix: feature.id, ...` directives link a source case to the
 DEL/OSTW support matrix. They are validated against
 `docs/support-matrix.toml` without copying Workshop catalog definitions.
+
+Project fixtures are checked at two complementary levels: the report runs each
+source entry through project loading, semantic analysis, and HIR validation,
+while the project test also checks the complete import graph as one project.
 
 ## Workshop integration
 

@@ -5,11 +5,11 @@
 //! or it is reported as a known gap/inconclusive case; an implementation that
 //! happens to agree with an unproven case cannot turn that case into a pass.
 
+use crate::SourceMap;
 use crate::diagnostics::Phase;
 use crate::matrix;
-use crate::project::{load_project, ProjectOptions};
+use crate::project::{ProjectOptions, load_project};
 use crate::syntax::parse_source;
-use crate::SourceMap;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,7 +89,8 @@ pub const REPORT_SCHEMA: u32 = 1;
 
 /// Load and execute every source fixture in `tests/corpus`.
 pub fn run(root: &Path) -> Result<CompatibilityReport, Vec<String>> {
-    let fixtures = discover(root)?;
+    let matrix = matrix::load_and_validate().map_err(|problems| problems)?;
+    let fixtures = discover(root, &matrix)?;
     let mut cases = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
         cases.push(evaluate(root, fixture));
@@ -111,23 +112,22 @@ pub fn run(root: &Path) -> Result<CompatibilityReport, Vec<String>> {
 
     Ok(CompatibilityReport {
         schema: REPORT_SCHEMA,
-        upstream_pin: matrix::load()
-            .map_err(|e| vec![format!("support matrix does not parse: {e}")])?
-            .meta
-            .upstream_pin,
+        upstream_pin: matrix.meta.upstream_pin.clone(),
         summary,
         cases,
     })
 }
 
-fn discover(root: &Path) -> Result<Vec<FixtureMetadata>, Vec<String>> {
+fn discover(
+    root: &Path,
+    matrix: &matrix::SupportMatrix,
+) -> Result<Vec<FixtureMetadata>, Vec<String>> {
     let mut paths = Vec::new();
     visit(&root.join("tests/corpus"), &mut paths).map_err(|e| vec![e.to_string()])?;
     paths.sort();
 
     let mut errors = Vec::new();
     let mut fixtures = Vec::with_capacity(paths.len());
-    let matrix = matrix::load_and_validate().map_err(|problems| problems)?;
     for path in paths {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
@@ -136,7 +136,7 @@ fn discover(root: &Path) -> Result<Vec<FixtureMetadata>, Vec<String>> {
                 continue;
             }
         };
-        match parse_metadata(root, &path, &text, &matrix) {
+        match parse_metadata(root, &path, &text, matrix) {
             Ok(fixture) => fixtures.push(fixture),
             Err(error) => errors.push(format!("{}: {error}", path.display())),
         }
@@ -216,6 +216,8 @@ fn parse_metadata(
         })?,
     };
 
+    validate_source(&source, evidence, &matrix.meta)?;
+
     for id in &matrix_ids {
         if !matrix.entries.iter().any(|feature| feature.id == *id) {
             return Err(format!("unknown // matrix: feature id {id}"));
@@ -228,13 +230,13 @@ fn parse_metadata(
                 FixtureStatus::KnownGap | FixtureStatus::Unsupported | FixtureStatus::Inconclusive,
             ) => {}
             Some(other) => {
-                return Err(format!("unknown outcome cannot be classified as {other:?}"))
+                return Err(format!("unknown outcome cannot be classified as {other:?}"));
             }
             None => {
                 return Err(
                     "unknown outcome requires // status: known-gap | unsupported | inconclusive"
                         .into(),
-                )
+                );
             }
         }
     } else if status.is_some() {
@@ -255,6 +257,35 @@ fn parse_metadata(
         matrix: matrix_ids,
         entry,
     })
+}
+
+fn validate_source(
+    source: &str,
+    evidence: EvidenceSource,
+    meta: &matrix::MatrixMeta,
+) -> Result<(), String> {
+    if !matches!(
+        evidence,
+        EvidenceSource::PinnedOracle | EvidenceSource::RealProject
+    ) {
+        return Ok(());
+    }
+
+    let prefix = format!(
+        "https://github.com/{}/blob/{}/",
+        meta.upstream_repo, meta.upstream_pin
+    );
+    if source
+        .strip_prefix(&prefix)
+        .is_some_and(|path| !path.is_empty())
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "{evidence:?} source must point to {} at the pinned upstream commit",
+            meta.upstream_repo
+        ))
+    }
 }
 
 fn infer_evidence(root: &Path, path: &Path, source: &str) -> Option<EvidenceSource> {
@@ -392,4 +423,46 @@ fn expected_matches(expected: ExpectedOutcome, actual: &str) -> bool {
             | (ExpectedOutcome::SemanticError, "semantic-error")
             | (ExpectedOutcome::HirError, "hir-error")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta() -> matrix::MatrixMeta {
+        matrix::MatrixMeta {
+            upstream_repo: "example/ostw".into(),
+            upstream_pin: "0123456789abcdef".into(),
+            dialect: "ostw".into(),
+        }
+    }
+
+    #[test]
+    fn pinned_evidence_requires_canonical_commit_url() {
+        let meta = meta();
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/0123456789abcdef/tests/Parser.cs",
+                EvidenceSource::PinnedOracle,
+                &meta,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/deadbeef/tests/Parser.cs",
+                EvidenceSource::PinnedOracle,
+                &meta,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn non_oracle_evidence_can_use_its_own_source_pointer() {
+        let meta = meta();
+        assert!(
+            validate_source("docs/decisions.md", EvidenceSource::SemanticContract, &meta,).is_ok()
+        );
+    }
 }

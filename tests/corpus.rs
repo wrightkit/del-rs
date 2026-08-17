@@ -211,6 +211,36 @@ fn project_fixtures_load() {
             errors.join("\n")
         );
         assert!(project.files.len() >= 2, "project {name}: expected imports to load, got files {:?}", project.files.len());
+
+        let semantic = del_rs::semantic::check_project(
+            &project,
+            &del_rs::semantic::provider::NoopProvider::new(),
+        );
+        let semantic_errors: Vec<String> = semantic
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.is_error())
+            .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+            .collect();
+        assert!(
+            semantic_errors.is_empty(),
+            "project {name}: semantic errors:\n{}",
+            semantic_errors.join("\n")
+        );
+
+        let (hir, lower_diagnostics) = del_rs::hir::lower::lower(&semantic);
+        let mut hir_diagnostics = lower_diagnostics;
+        hir_diagnostics.extend(del_rs::hir::validate::validate(&hir));
+        let hir_errors: Vec<String> = hir_diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.is_error())
+            .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+            .collect();
+        assert!(
+            hir_errors.is_empty(),
+            "project {name}: HIR errors:\n{}",
+            hir_errors.join("\n")
+        );
         eprintln!("project {name}: {} files loaded, {} imports", project.files.len(), project.imports.len());
     }
 }
