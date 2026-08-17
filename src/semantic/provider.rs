@@ -9,7 +9,7 @@ use workshop_rs::WorkshopError;
 
 /// The reviewed canonical Workshop dependency baseline consumed by this
 /// integration slice. Keep this in sync with the git revision in `Cargo.toml`.
-pub const WORKSHOP_RS_REVISION: &str = "7b0f8c38b9d1ee627565e8406de25293df9b4f7f";
+pub const WORKSHOP_RS_REVISION: &str = "5d9d77250462898d00e970d51141bcd87a44b8f3";
 
 /// Position a query name is used in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -193,12 +193,20 @@ impl CatalogProvider {
     }
 
     fn resolve_event(&self, name: &str) -> Option<(&CatalogEntry, String)> {
-        // These are the three event identities represented by the pinned WIR.
         // The spelling bridge is DEL's source contract; the identity remains
         // owned by the canonical catalog.
         let canonical = match name {
             "OngoingGlobal" => "global",
             "OngoingPlayer" => "eachPlayer",
+            "OnElimination" => "playerEarnedElimination",
+            "OnFinalBlow" => "playerDealtFinalBlow",
+            "OnDamageDealt" => "playerDealtDamage",
+            "OnDamageTaken" => "playerTookDamage",
+            "OnDeath" => "playerDied",
+            "OnHealingDealt" => "playerDealtHealing",
+            "OnHealingTaken" => "playerReceivedHealing",
+            "OnPlayerJoin" => "playerJoined",
+            "OnPlayerLeave" => "playerLeft",
             "Subroutine" => "subroutine",
             _ => name,
         };
@@ -246,10 +254,12 @@ impl WorkshopProvider for CatalogProvider {
             let Some((entry, canonical_id)) = self.resolve_event(&query.name) else {
                 return ExternalResolution::NotFound;
             };
-            let context = match canonical_id.as_str() {
-                "global" => Some(EventContext::Global),
-                "eachPlayer" => Some(EventContext::Player),
-                _ => None,
+            let context = if canonical_id == "global" {
+                Some(EventContext::Global)
+            } else if canonical_id == "eachPlayer" || canonical_id.starts_with("player") {
+                Some(EventContext::Player)
+            } else {
+                None
             };
             return ExternalResolution::Known(ExternalBinding::Event(ExternalEventInfo {
                 canonical_id: entry.id.clone(),

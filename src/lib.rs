@@ -15,6 +15,7 @@ pub mod project;
 pub mod semantic;
 pub mod hir;
 pub mod api;
+pub mod workshop;
 
 pub use diagnostics::{Diagnostic, Phase, RelatedSpan, Severity};
 pub use span::{FileId, LineCol, SourceFile, SourceMap, Span};

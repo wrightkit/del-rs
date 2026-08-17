@@ -27,6 +27,7 @@ pub struct HirProgram {
     pub classes: Vec<HirClass>,
     pub enums: Vec<HirEnum>,
     pub vars: Vec<HirVar>,
+    pub reservations: Vec<HirReservation>,
     pub rules: Vec<HirRule>,
     /// Expression registry: id -> node (HirExprId - 1 indexes this).
     pub exprs: Vec<HirExpr>,
@@ -146,6 +147,14 @@ pub struct HirVar {
     pub storage: StorageIntent,
     pub semantics: ValueSemantics,
     pub is_const: bool,
+    pub explicit_id: Option<u32>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirReservation {
+    pub storage: StorageIntent,
+    pub names: Vec<String>,
     pub span: Span,
 }
 

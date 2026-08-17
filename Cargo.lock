@@ -264,7 +264,7 @@ checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 [[package]]
 name = "workshop-rs"
 version = "0.1.0"
-source = "git+https://github.com/wrightkit/workshop-rs.git?rev=7b0f8c38b9d1ee627565e8406de25293df9b4f7f#7b0f8c38b9d1ee627565e8406de25293df9b4f7f"
+source = "git+https://github.com/wrightkit/workshop-rs.git?rev=5d9d77250462898d00e970d51141bcd87a44b8f3#5d9d77250462898d00e970d51141bcd87a44b8f3"
 dependencies = [
  "serde",
  "serde_json",

@@ -34,6 +34,7 @@ pub fn lower(program: &SemanticProgram) -> (HirProgram, Vec<crate::diagnostics::
             classes: Vec::new(),
             enums: Vec::new(),
             vars: Vec::new(),
+            reservations: Vec::new(),
             rules: Vec::new(),
             exprs: Vec::new(),
             top: Vec::new(),
@@ -121,18 +122,40 @@ impl<'a> Lowerer<'a> {
                     ValueSemantics::Value
                 };
                 let vid = self.hir.vars.len() as HirVarId;
+                let explicit_id = self
+                    .program
+                    .var_symbol_of(v.name.id)
+                    .and_then(|sid| self.program.tables.symbol(sid).flags.var_id)
+                    .and_then(|id| u32::try_from(id).ok());
                 self.hir.vars.push(HirVar {
                     name: v.name.name.clone(),
                     ty,
                     storage,
                     semantics,
                     is_const: v.is_const_init,
+                    explicit_id,
                     span: v.name.span,
                 });
                 if let Some(sid) = self.program.var_symbol_of(v.name.id) {
                     self.symbol_var.insert(sid, vid);
                 }
                 self.local_vars.insert(v.name.id, vid);
+            }
+            ItemKind::VarReservation(reservation) => {
+                let storage = match reservation.storage {
+                    StorageModifier::GlobalVar => StorageIntent::Global,
+                    StorageModifier::PlayerVar => StorageIntent::Player,
+                };
+                self.hir.reservations.push(HirReservation {
+                    storage,
+                    names: reservation
+                        .names
+                        .iter()
+                        .map(NameText::name_text)
+                        .filter(|name| !name.is_empty())
+                        .collect(),
+                    span: item.span,
+                });
             }
             ItemKind::Function(f) => {
                 let sid = self.program.function_symbol_of(f.name.id);
@@ -426,6 +449,7 @@ impl<'a> Lowerer<'a> {
             storage: StorageIntent::Local,
             semantics: ValueSemantics::Value,
             is_const: false,
+            explicit_id: None,
             span,
         });
         vid
@@ -683,13 +707,23 @@ impl<'a> Lowerer<'a> {
                 HirExprKind::External {
                     name: self.ident_name(e),
                     namespace: Vec::new(),
-                    binding: None,
+                    binding: self.external_binding(e.id),
                 }
             }
-            ExprKind::Member { base, name } => HirExprKind::Member {
-                base: self.expr(base),
-                member: self.lower_member_target(name),
-            },
+            ExprKind::Member { base, name } => {
+                if let Some(binding) = self.external_binding(e.id) {
+                    HirExprKind::External {
+                        name: name.name.clone(),
+                        namespace: self.member_namespace(base),
+                        binding: Some(binding),
+                    }
+                } else {
+                    HirExprKind::Member {
+                        base: self.expr(base),
+                        member: self.lower_member_target(name),
+                    }
+                }
+            }
             ExprKind::Index { base, index } => HirExprKind::Index {
                 base: self.expr(base),
                 index: self.expr(index),
@@ -895,7 +929,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: id.name.clone(),
                             namespace: Vec::new(),
-                            binding: None,
+                            binding: self.external_binding(call.callee.id),
                         },
                         args,
                     }
@@ -904,7 +938,7 @@ impl<'a> Lowerer<'a> {
                     target: CallTarget::External {
                         name: id.name.clone(),
                         namespace: Vec::new(),
-                        binding: None,
+                        binding: self.external_binding(call.callee.id),
                     },
                     args,
                 },
@@ -972,7 +1006,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: name.name.clone(),
                             namespace: self.member_namespace(base),
-                            binding: None,
+                            binding: self.external_binding(call.callee.id),
                         },
                         args,
                     },
@@ -994,6 +1028,13 @@ impl<'a> Lowerer<'a> {
                 p
             }
             _ => Vec::new(),
+        }
+    }
+
+    fn external_binding(&self, node: NodeId) -> Option<ExternalBinding> {
+        match self.program.resolution.get(&node) {
+            Some(Resolution::External(binding)) => Some(binding.clone()),
+            _ => None,
         }
     }
 
