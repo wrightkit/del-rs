@@ -9,6 +9,7 @@
 pub mod span;
 pub mod diagnostics;
 pub mod matrix;
+pub mod compatibility;
 pub mod syntax;
 pub mod project;
 pub mod semantic;

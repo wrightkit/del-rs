@@ -104,6 +104,11 @@ the pinned upstream compiler.
   `del-rs matrix --check` command validate `support-matrix.toml`: schema,
   unique ids, fixed category/state sets, existing evidence paths, and a
   rationale note on every `lowering-dependent`/`out-of-scope` entry.
+- **Evidence report.** `tests/corpus.rs` and `del-rs compatibility --json`
+  classify each source case by independent evidence and separate matched
+  behavior, known gaps, unsupported cases, unexpected regressions, and
+  inconclusive evidence. Unknown expectations require an explicit non-passing
+  status; they are never promoted to compatibility by native agreement.
 
 ## Pinned upstream oracle and provenance boundary
 
@@ -125,4 +130,6 @@ recorded in [`provenance.md`](provenance.md):
 - [`limitations.md`](limitations.md) — current support boundary and gap classification.
 - [`provenance.md`](provenance.md) — pinned oracle identity and licensing rules.
 - [`architecture.md`](architecture.md) — implemented architecture and the provider/HIR seams.
+- [`workshop-conformance.md`](workshop-conformance.md) — machine-readable
+  report and the canonical Workshop integration boundary.
 - [`syntax-notes.md`](syntax-notes.md) — lexical/grammar reference from the pinned upstream.

@@ -481,11 +481,14 @@ impl<'a> Lowerer<'a> {
                 let init = v.init.as_ref().map(|(_, e)| self.expr(e));
                 HirStmtKind::VarDecl { var, init }
             }
-            StmtKind::If { cond, then, els } => HirStmtKind::If {
-                cond: self.expr(cond),
-                then: Box::new(self.lower_stmt_owned(then)),
-                els: els.as_ref().map(|e| Box::new(self.lower_stmt_owned(e))),
-            },
+            StmtKind::If { cond, then, els } => {
+                self.register_pattern_bindings(cond);
+                HirStmtKind::If {
+                    cond: self.expr(cond),
+                    then: Box::new(self.lower_stmt_owned(then)),
+                    els: els.as_ref().map(|e| Box::new(self.lower_stmt_owned(e))),
+                }
+            }
             StmtKind::While { cond, body } => HirStmtKind::While {
                 cond: self.expr(cond),
                 body: Box::new(self.lower_stmt_owned(body)),
@@ -615,6 +618,19 @@ impl<'a> Lowerer<'a> {
                 })
                 .unwrap_or(&0),
             _ => 0,
+        }
+    }
+
+    fn register_pattern_bindings(&mut self, cond: &Expr) {
+        let ExprKind::Is { pattern, .. } = &cond.kind else {
+            return;
+        };
+        for binding in &pattern.bindings {
+            if self.local_vars.contains_key(&binding.id) {
+                continue;
+            }
+            let var = self.fresh_local(&binding.name, self.ty(binding.id), binding.span);
+            self.local_vars.insert(binding.id, var);
         }
     }
 

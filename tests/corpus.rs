@@ -9,10 +9,9 @@
 //! `projects/` fixtures are exercised by dedicated project tests, not the
 //! generic walker.
 
-use del_rs::diagnostics::{Diagnostic, Phase};
 use del_rs::project::{load_project, ProjectOptions};
 use del_rs::syntax::parse_source;
-use del_rs::{FileId, SourceMap};
+use del_rs::SourceMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -51,7 +50,7 @@ fn header_directives(text: &str) -> (Option<Expect>, bool, bool) {
             break;
         }
         let t = t.trim_start_matches('/').trim_start();
-        if let Some((k, v)) = t.split_once(':') {
+        if let Some((k, _)) = t.split_once(':') {
             match k.trim() {
                 "expect" => expect = parse_expect(line),
                 "source" => has_source = true,
@@ -61,14 +60,6 @@ fn header_directives(text: &str) -> (Option<Expect>, bool, bool) {
         }
     }
     (expect, has_source, has_license)
-}
-
-fn errors_at(diags: &[Diagnostic], phase: Phase) -> usize {
-    diags.iter().filter(|d| d.phase == phase && d.is_error()).count()
-}
-
-fn any_error(diags: &[Diagnostic]) -> bool {
-    diags.iter().any(|d| d.is_error())
 }
 
 struct CaseResult {
@@ -113,7 +104,7 @@ fn run_case(path: &Path, text: &str, expect: Expect) -> CaseResult {
 
     let outcome: &'static str = match expect {
         Expect::Ok => {
-            if parse_errors == 0 && semantic_errors == 0 {
+            if parse_errors == 0 && semantic_errors == 0 && hir_errors == 0 {
                 "PASS"
             } else {
                 "FAIL"
@@ -221,5 +212,43 @@ fn project_fixtures_load() {
         );
         assert!(project.files.len() >= 2, "project {name}: expected imports to load, got files {:?}", project.files.len());
         eprintln!("project {name}: {} files loaded, {} imports", project.files.len(), project.imports.len());
+    }
+}
+
+#[test]
+fn compatibility_report_classifies_evidence_and_gaps() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let report = del_rs::compatibility::run(&root).expect("corpus evidence must be valid");
+    assert_eq!(report.summary.total, report.cases.len());
+    assert!(report.summary.matched > 0);
+    assert!(report.summary.known_gaps > 0);
+    assert!(report.summary.inconclusive > 0);
+    assert_eq!(
+        report.summary.known_gaps,
+        report
+            .cases
+            .iter()
+            .filter(|case| case.status == del_rs::compatibility::FixtureStatus::KnownGap)
+            .count()
+    );
+    assert_eq!(
+        report.summary.inconclusive,
+        report
+            .cases
+            .iter()
+            .filter(|case| case.status == del_rs::compatibility::FixtureStatus::Inconclusive)
+            .count()
+    );
+    assert_eq!(report.summary.unexpected_regressions, 0);
+    assert!(report.cases.iter().any(|case| {
+        case.fixture.evidence == del_rs::compatibility::EvidenceSource::PinnedOracle
+    }));
+    assert!(report.cases.iter().any(|case| {
+        case.fixture.evidence == del_rs::compatibility::EvidenceSource::RealProject
+    }));
+    for case in &report.cases {
+        if case.fixture.expect == del_rs::compatibility::ExpectedOutcome::Unknown {
+            assert_ne!(case.status, del_rs::compatibility::FixtureStatus::Matched);
+        }
     }
 }
