@@ -702,10 +702,11 @@ pub fn load_project(opts: ProjectOptions) -> Project;    // total; errors become
 
 ## 12. External provider boundary
 
-The single seam through which Workshop-facing names enter the front end. del-rs owns the trait
-and the permissive default; workshop-rs owns a real implementation later (integration #8,
-blocked on `wrightkit/workshop-rs#2` contracts). No catalog data, enum tables, event tables, or
-builtin signatures live in del-rs.
+The single seam through which Workshop-facing names enter the front end. del-rs owns the trait,
+the permissive default, and the source-language adapter; `CatalogProvider` reads canonical
+identities and metadata from the pinned `workshop-rs` catalog. No catalog data, enum tables,
+event tables, or builtin signatures are copied into del-rs. The adapter records
+`WORKSHOP_RS_REVISION` and exposes the catalog identity for reproducible diagnostics/tests.
 
 ```rust
 // semantic/provider.rs
@@ -737,12 +738,13 @@ pub enum ExternalBinding {
 }
 
 pub struct ExternalValueInfo {
+    pub canonical_id: String,
     pub ty: ExternalType,                       // Known(category) | Unknown
     pub signature: Option<ArgSignature>,        // param names + optionality, when known
 }
-pub struct ExternalActionInfo { pub params: Option<Vec<ExternalParam>> }
-pub struct ExternalEventInfo { pub context: Option<EventContext> } // Global | Player | Unknown
-pub struct ExternalTypeInfo { pub category: ExternalCategory, pub constant: bool }
+pub struct ExternalActionInfo { pub canonical_id: String, pub params: Option<Vec<ExternalParam>> }
+pub struct ExternalEventInfo { pub canonical_id: String, pub context: Option<EventContext> } // Global | Player | Unknown
+pub struct ExternalTypeInfo { pub canonical_id: String, pub category: ExternalCategory, pub constant: bool }
 pub struct ArgSignature { pub params: Vec<ExternalParam> }
 pub struct ExternalParam { pub name: String, pub optional: bool }
 

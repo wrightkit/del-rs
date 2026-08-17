@@ -17,9 +17,9 @@ approximation areas.
   optimizer choices. The typed HIR expresses intent only
   (`architecture.md` §15).
 - Canonical Workshop catalog data (actions/values/events/constants):
-  `del-rs` never vendors it; the `WorkshopProvider` trait is the documented
-  seam. The `NoopProvider` treats every Workshop-facing name as
-  unresolved-but-legal.
+  `del-rs` never vendors it; `CatalogProvider` reads the pinned
+  `workshop-rs` catalog through the documented `WorkshopProvider` seam.
+  `NoopProvider` remains available for Workshop-independent workflows.
 - Vanilla Workshop superset bodies (`rule("...")`, `variables {}`,
   `subroutines {}`, `settings {}`, hooks): parsed as opaque token spans with
   no frontend semantics.
