@@ -7,10 +7,6 @@ use crate::span::{FileId, Span};
 use workshop_rs::catalog::{Catalog, CatalogEntry, Kind, Locale};
 use workshop_rs::WorkshopError;
 
-/// The reviewed canonical Workshop dependency baseline consumed by this
-/// integration slice. Keep this in sync with the git revision in `Cargo.toml`.
-pub const WORKSHOP_RS_REVISION: &str = "7b0f8c38b9d1ee627565e8406de25293df9b4f7f";
-
 /// Position a query name is used in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExternalPosition {
@@ -149,7 +145,7 @@ pub struct CatalogProvider {
 }
 
 impl CatalogProvider {
-    /// Load the built-in catalog at the reviewed `workshop-rs` revision.
+    /// Load the built-in catalog from the released `workshop-rs` dependency.
     pub fn new() -> Result<Self, WorkshopError> {
         Self::from_catalog(Catalog::builtin()?, Locale::new("en-US"))
     }
@@ -193,7 +189,6 @@ impl CatalogProvider {
     }
 
     fn resolve_event(&self, name: &str) -> Option<(&CatalogEntry, String)> {
-        // These are the three event identities represented by the pinned WIR.
         // The spelling bridge is DEL's source contract; the identity remains
         // owned by the canonical catalog.
         let canonical = match name {
