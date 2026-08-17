@@ -23,7 +23,8 @@ boundary is documented in the [architecture reference](docs/architecture.md).
 - **Tooling APIs:** symbol, reference, type, and resolution queries for Wright
   and other consumers.
 - **Compatibility evidence:** a machine-checked support matrix, corpus fixtures,
-  provenance records, and a bounded semantic oracle.
+  provenance records, a bounded semantic oracle, and an evidence report
+  (`del-rs compatibility --json`).
 
 ## .del / .ostw compatibility
 
@@ -78,6 +79,7 @@ del-rs check <file-or-dir> [--json]
 del-rs hir <file-or-dir> [--json]
 del-rs inspect <file> <line>:<col> [--json]
 del-rs matrix [--check] [--json]
+del-rs compatibility [--json]
 ```
 
 Exit codes are `0` for success, `1` for diagnosed source errors, `2` for usage

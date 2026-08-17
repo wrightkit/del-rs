@@ -24,6 +24,7 @@ fn main() -> ExitCode {
         "hir" => cmd_hir(&args[1..]),
         "inspect" => cmd_inspect(&args[1..]),
         "matrix" => cmd_matrix(&args[1..]),
+        "compatibility" => cmd_compatibility(&args[1..]),
         other => {
             eprintln!("del-rs: unknown command '{other}'");
             print_help();
@@ -51,6 +52,7 @@ Commands:\n\
   hir <file-or-dir> [--json]       Lower to HIR and validate; print a HIR summary\n\
   inspect <file> <line>:<col> [--json]  Query symbol / type / resolution at a position\n\
   matrix [--check] [--json]        Print or validate the embedded compatibility matrix\n\
+  compatibility [--json]           Run the evidence-driven DEL/OSTW corpus report\n\
   --version, --help\n\
 \n\
 Exit codes: 0 success, 1 errors found, 2 usage error, 3 internal error, 4 I/O error"
@@ -320,6 +322,57 @@ fn cmd_matrix(args: &[String]) -> Result<u8, String> {
             } else {
                 for p in &problems {
                     eprintln!("matrix problem: {p}");
+                }
+            }
+            Ok(1)
+        }
+    }
+}
+
+fn cmd_compatibility(args: &[String]) -> Result<u8, String> {
+    let mut json = false;
+    for a in args {
+        match a.as_str() {
+            "--json" => json = true,
+            _ => return Err(format!("unknown argument '{a}'")),
+        }
+    }
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    match del_rs::compatibility::run(root) {
+        Ok(report) => {
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else {
+                let s = &report.summary;
+                println!(
+                    "compatibility: {} fixtures | matched {} | known gaps {} | unsupported {} | unexpected regressions {} | inconclusive {}",
+                    s.total,
+                    s.matched,
+                    s.known_gaps,
+                    s.unsupported,
+                    s.unexpected_regressions,
+                    s.inconclusive
+                );
+                for case in &report.cases {
+                    if case.status != del_rs::compatibility::FixtureStatus::Matched {
+                        println!("  {:?}: {}", case.status, case.fixture.path);
+                    }
+                }
+            }
+            Ok(if report.summary.unexpected_regressions == 0 { 0 } else { 1 })
+        }
+        Err(problems) => {
+            if json {
+                let doc = serde_json::json!({
+                    "command": "compatibility",
+                    "valid": false,
+                    "problems": problems,
+                });
+                println!("{}", serde_json::to_string_pretty(&doc).unwrap());
+            } else {
+                for problem in &problems {
+                    eprintln!("compatibility problem: {problem}");
                 }
             }
             Ok(1)

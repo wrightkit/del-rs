@@ -65,6 +65,17 @@ fn matrix_check_exit_zero() {
 }
 
 #[test]
+fn compatibility_json_report() {
+    let out = del_rs_bin().args(["compatibility", "--json"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(doc["schema"], 1);
+    assert!(doc["summary"]["matched"].is_number());
+    assert!(doc["summary"]["known_gaps"].is_number());
+    assert!(doc["summary"]["unexpected_regressions"].is_number());
+}
+
+#[test]
 fn usage_error_exit_two() {
     let out = del_rs_bin().arg("bogus-command").output().unwrap();
     assert_eq!(out.status.code(), Some(2));

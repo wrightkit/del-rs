@@ -19,8 +19,8 @@ fn matrix_validates() {
 fn matrix_states_coverage() {
     let matrix = load_and_validate().unwrap();
     let counts = state_counts(&matrix);
-    let total: usize = counts.iter().map(|(_, n)| n).sum();
-    assert_eq!(total, matrix.entries.len());
+    assert_eq!(counts.len(), State::ALL.len());
+    assert!(matrix.entries.iter().all(|entry| State::ALL.contains(&entry.state)));
     let lowering: usize = counts
         .iter()
         .filter(|(s, _)| *s == State::LoweringDependent)

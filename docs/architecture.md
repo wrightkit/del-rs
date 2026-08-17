@@ -1562,6 +1562,9 @@ leading header-directive block (established convention, matching the existing fi
 // source: https://github.com/ItsDeltin/Overwatch-Script-To-Workshop/blob/<commit>/<path>
 // license: MIT
 // expect: ok
+// evidence: pinned-oracle                 # optional when source/path is unambiguous
+// status: known-gap                       # required for expect: unknown
+// matrix: semantic.pattern-matching       # optional support-matrix links
 // note: from <upstream test class> (optional)
 ```
 
@@ -1583,8 +1586,15 @@ Semantics of `expect`:
 - `unknown` — run, record, do not assert (exploration marker).
 
 - The harness walks all `tests/corpus/**/*.{del,ostw,workshop}`, runs the pipeline stage the
-  directive names, and compares outcomes. It also asserts `source` + `license` are present and
-  that every `// matrix:` id exists in the support matrix.
+  directive names, and compares outcomes. It also classifies the independent evidence source
+  (`pinned-oracle`, `real-project`, `semantic-contract`, or `internal-invariant`), asserts
+  `source` + `license` are present, and validates every optional `// matrix:` id against the
+  support matrix. Pinned source URLs and project paths provide the legacy classifications when
+  `// evidence:` is omitted.
+- `del-rs compatibility --json` emits report schema 1 with separate `matched`, `known-gaps`,
+  `unsupported`, `unexpected-regressions`, and `inconclusive` counts plus per-fixture results.
+  An `unknown` fixture must declare an explicit non-passing status, so current native agreement
+  cannot silently turn a known gap into compatibility.
 - Corpus counts and per-case results are printed by the test for CI dashboards.
 - Multi-file/import cases: `// entry:` names the entry; imported sibling files carry their own
   directives; the harness checks the declared `expect` on the entry's pipeline outcome.

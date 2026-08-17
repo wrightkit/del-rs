@@ -47,6 +47,9 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
   evidence-backed approximation areas.
 - [`provenance.md`](provenance.md) — pinned upstream oracle identity, license
   guardrails for the corpus, and the re-pinning procedure.
+- [`workshop-conformance.md`](workshop-conformance.md) — evidence report
+  schema and the integration boundary with canonical `workshop-rs` feature
+  identities.
 
 ### Interfaces
 
@@ -70,12 +73,12 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
 - Test targets (all auto-discovered by `cargo test`):
   `tests/parse.rs` (lexer/parser), `tests/semantic.rs` (semantics),
   `tests/advanced.rs` (advanced semantics), `tests/hir.rs` (HIR lowering +
-  validation + oracle), `tests/corpus.rs` (corpus harness + project
-  fixtures), `tests/matrix.rs` (matrix mechanical validation),
+  validation + oracle), `tests/corpus.rs` (corpus harness + evidence report +
+  project fixtures), `tests/matrix.rs` (matrix mechanical validation),
   `tests/cli.rs` (CLI smoke tests).
 - Corpus fixtures live under `tests/corpus/` with `// source` / `// license`
-  / `// expect` headers; conventions are documented in
-  [`syntax-notes.md`](syntax-notes.md) and [`provenance.md`](provenance.md).
+  / `// expect` headers. Evidence, gap, and matrix-link directives are
+  documented in [`workshop-conformance.md`](workshop-conformance.md).
 - CI (`.github/workflows/ci.yml`) runs `cargo build --all-targets`,
   `cargo test --all-targets`, the matrix gate, and the corpus harness.
 
