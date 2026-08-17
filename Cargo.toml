@@ -11,7 +11,7 @@ repository = "https://github.com/wrightkit/del-rs"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
-workshop-rs = { git = "https://github.com/wrightkit/workshop-rs.git", rev = "5d9d77250462898d00e970d51141bcd87a44b8f3", package = "workshop-rs" }
+workshop-rs = { git = "https://github.com/wrightkit/workshop-rs.git", rev = "14a15347211c3c334087008b09e21d0501242f18", package = "workshop-rs" }
 
 [[bin]]
 name = "del-rs"
