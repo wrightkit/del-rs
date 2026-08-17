@@ -44,7 +44,7 @@ evidence.[^upstream-reference]
 | Lambdas & closures | ✅ Supported | |
 | Pattern matching & recursion | ✅ Supported | |
 | Embedded Workshop / lobby data | 🟡 Partial | Vanilla Workshop blocks parse; lobby-settings import not yet |
-| Workshop builtins | 🟡 Partial | `CatalogProvider` resolves the pinned canonical catalog; lowering is tracked separately |
+| Workshop builtins | 🟡 Partial | `CatalogProvider` resolves the released canonical `workshop-rs` catalog; lowering is tracked separately |
 | DEL/OSTW → Workshop compilation | ⏳ Not yet | Requires `workshop-rs` integration |
 | Workshop → DEL/OSTW reconstruction | ⏳ Not yet | |
 
@@ -60,9 +60,10 @@ meanings.
 
 ## Building
 
-Requirements: Rust 1.85+ (edition 2021). The crate consumes the pinned
-canonical `workshop-rs` catalog in addition to `serde`, `serde_json`, and
-`toml`; Workshop-independent workflows can continue using `NoopProvider`.
+Requirements: Rust 1.85+ (edition 2021). The crate consumes the released
+`workshop-rs 0.1.1` library from crates.io in addition to `serde`,
+`serde_json`, and `toml`; Workshop-independent workflows can continue using
+`NoopProvider`.
 
 ```sh
 cargo build --release
