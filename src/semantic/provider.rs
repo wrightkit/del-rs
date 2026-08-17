@@ -7,10 +7,6 @@ use crate::span::{FileId, Span};
 use workshop_rs::catalog::{Catalog, CatalogEntry, Kind, Locale};
 use workshop_rs::WorkshopError;
 
-/// The reviewed canonical Workshop dependency baseline consumed by this
-/// integration slice. Keep this in sync with the git revision in `Cargo.toml`.
-pub const WORKSHOP_RS_REVISION: &str = "5d9d77250462898d00e970d51141bcd87a44b8f3";
-
 /// Position a query name is used in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExternalPosition {
@@ -149,7 +145,7 @@ pub struct CatalogProvider {
 }
 
 impl CatalogProvider {
-    /// Load the built-in catalog at the reviewed `workshop-rs` revision.
+    /// Load the built-in catalog from the released `workshop-rs` dependency.
     pub fn new() -> Result<Self, WorkshopError> {
         Self::from_catalog(Catalog::builtin()?, Locale::new("en-US"))
     }
