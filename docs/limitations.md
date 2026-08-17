@@ -17,7 +17,7 @@ approximation areas.
   optimizer choices. The typed HIR expresses intent only
   (`architecture.md` §15).
 - Canonical Workshop catalog data (actions/values/events/constants):
-  `del-rs` never vendors it; `CatalogProvider` reads the pinned
+  `del-rs` never vendors it; `CatalogProvider` reads the released
   `workshop-rs` catalog through the documented `WorkshopProvider` seam.
   `NoopProvider` remains available for Workshop-independent workflows.
 - Vanilla Workshop superset bodies (`rule("...")`, `variables {}`,
