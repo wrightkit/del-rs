@@ -49,7 +49,7 @@ exactly one state, defined as follows:
 | `planned` | Inventoried and evidenced upstream, but not yet implemented; not claimed as supported. |
 | `frontend-supported` | Lexed/parsed into documented AST structures with stable spans; no semantic claims. |
 | `semantic-supported` | Resolved, type-checked, and diagnosed by the semantic model / HIR; no Workshop emission required. |
-| `lowering-dependent` | Requires concrete Workshop encoding owned by the `workshop-rs` integration (issue #8); the frontend carries intent only. |
+| `lowering-dependent` | Requires concrete Workshop encoding owned by del-rs #30; the canonical WIR, catalog, and emission contracts remain owned by `workshop-rs`, while the frontend carries intent only. |
 | `end-to-end-supported` | Fully supported through Workshop emission; currently unused (no end-to-end path exists in this crate). |
 | `out-of-scope` | Deliberately outside the `del-rs` language contract (e.g. editor behavior). |
 
@@ -77,10 +77,10 @@ its per-entry evidence are the source of truth.
 
 End-to-end Workshop compilation (`DEL/OSTW -> Workshop text`) is
 **`lowering-dependent`**: the concrete encoding (variable slots, helper
-rules, dispatch tables, recursion stacks, reference layouts, emitter) is owned
-by the `workshop-rs` integration (issue #8), which consumes the typed HIR
-across the documented boundary. Decompilation (`Workshop -> DEL/OSTW`) is
-`planned` (issue #9).
+rules, dispatch tables, recursion stacks, reference layouts, emitter) is
+del-rs #30 work. It consumes typed HIR across the documented boundary; the
+canonical WIR, catalog, and emission contracts remain owned by `workshop-rs`.
+Decompilation (`Workshop -> DEL/OSTW`) is `planned` (issue #9).
 
 ## Corpus and differential-testing methodology
 
@@ -89,10 +89,10 @@ feature inventory ([`inventory.md`](inventory.md)), and — where reproducible �
 the pinned upstream compiler.
 
 - **Fixture headers.** Every `.del`/`.ostw` corpus fixture carries
-  `// source: <url@commit>`, `// license: MIT`, and `// expect: <outcome>`
+  `// source: <url@commit>`, `// license: <license>`, and `// expect: <outcome>`
   directives. The corpus harness (`tests/corpus.rs`, run on every CI run)
-  fails on missing source/license directives and asserts each fixture's
-  declared outcome.
+  fails on missing or empty source/license directives and asserts each
+  fixture's declared outcome.
 - **Accept/reject agreement.** The primary compatibility record is
   accept/reject and diagnostic-presence agreement per fixture, expressed as
   `// expect:` outcomes — never output-text identity.
@@ -109,6 +109,12 @@ the pinned upstream compiler.
   behavior, known gaps, unsupported cases, unexpected regressions, and
   inconclusive evidence. Unknown expectations require an explicit non-passing
   status; they are never promoted to compatibility by native agreement.
+
+`pinned-oracle` fixtures must use the pinned OSTW compiler repository and
+commit. `real-project` fixtures must use their own immutable repository,
+revision, path, and license provenance; they cannot reuse the pinned upstream
+compiler identity. Compiler-shipped Examples and Modules remain project-level
+`pinned-oracle` fixtures until an independent real project is added.
 
 ## Pinned upstream oracle and provenance boundary
 

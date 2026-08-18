@@ -50,6 +50,9 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
 - [`workshop-conformance.md`](workshop-conformance.md) — evidence report
   schema and the integration boundary with canonical `workshop-rs` feature
   identities.
+- The DEL-owned source/provenance bridge is documented in
+  [`architecture.md`](architecture.md) §6.1 and independently exercised by
+  `tests/workshop_source.rs`.
 
 ### Interfaces
 

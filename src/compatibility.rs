@@ -5,11 +5,11 @@
 //! or it is reported as a known gap/inconclusive case; an implementation that
 //! happens to agree with an unproven case cannot turn that case into a pass.
 
+use crate::SourceMap;
 use crate::diagnostics::Phase;
 use crate::matrix;
-use crate::project::{load_project, ProjectOptions};
+use crate::project::{ProjectOptions, load_project};
 use crate::syntax::parse_source;
-use crate::SourceMap;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,7 +89,8 @@ pub const REPORT_SCHEMA: u32 = 1;
 
 /// Load and execute every source fixture in `tests/corpus`.
 pub fn run(root: &Path) -> Result<CompatibilityReport, Vec<String>> {
-    let fixtures = discover(root)?;
+    let matrix = matrix::load_and_validate().map_err(|problems| problems)?;
+    let fixtures = discover(root, &matrix)?;
     let mut cases = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
         cases.push(evaluate(root, fixture));
@@ -111,23 +112,22 @@ pub fn run(root: &Path) -> Result<CompatibilityReport, Vec<String>> {
 
     Ok(CompatibilityReport {
         schema: REPORT_SCHEMA,
-        upstream_pin: matrix::load()
-            .map_err(|e| vec![format!("support matrix does not parse: {e}")])?
-            .meta
-            .upstream_pin,
+        upstream_pin: matrix.meta.upstream_pin.clone(),
         summary,
         cases,
     })
 }
 
-fn discover(root: &Path) -> Result<Vec<FixtureMetadata>, Vec<String>> {
+fn discover(
+    root: &Path,
+    matrix: &matrix::SupportMatrix,
+) -> Result<Vec<FixtureMetadata>, Vec<String>> {
     let mut paths = Vec::new();
     visit(&root.join("tests/corpus"), &mut paths).map_err(|e| vec![e.to_string()])?;
     paths.sort();
 
     let mut errors = Vec::new();
     let mut fixtures = Vec::with_capacity(paths.len());
-    let matrix = matrix::load_and_validate().map_err(|problems| problems)?;
     for path in paths {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
@@ -136,7 +136,7 @@ fn discover(root: &Path) -> Result<Vec<FixtureMetadata>, Vec<String>> {
                 continue;
             }
         };
-        match parse_metadata(root, &path, &text, &matrix) {
+        match parse_metadata(root, &path, &text, matrix) {
             Ok(fixture) => fixtures.push(fixture),
             Err(error) => errors.push(format!("{}: {error}", path.display())),
         }
@@ -207,6 +207,7 @@ fn parse_metadata(
 
     let source = source.ok_or("missing // source: independent evidence pointer")?;
     let license = license.ok_or("missing // license: provenance marker")?;
+    validate_license(&license)?;
     let expect = expect.ok_or("missing // expect: outcome")?;
     let evidence = match evidence {
         Some(evidence) => evidence,
@@ -215,6 +216,8 @@ fn parse_metadata(
                 .to_string()
         })?,
     };
+
+    validate_source(&source, evidence, &matrix.meta)?;
 
     for id in &matrix_ids {
         if !matrix.entries.iter().any(|feature| feature.id == *id) {
@@ -228,13 +231,13 @@ fn parse_metadata(
                 FixtureStatus::KnownGap | FixtureStatus::Unsupported | FixtureStatus::Inconclusive,
             ) => {}
             Some(other) => {
-                return Err(format!("unknown outcome cannot be classified as {other:?}"))
+                return Err(format!("unknown outcome cannot be classified as {other:?}"));
             }
             None => {
                 return Err(
                     "unknown outcome requires // status: known-gap | unsupported | inconclusive"
                         .into(),
-                )
+                );
             }
         }
     } else if status.is_some() {
@@ -255,6 +258,84 @@ fn parse_metadata(
         matrix: matrix_ids,
         entry,
     })
+}
+
+fn validate_source(
+    source: &str,
+    evidence: EvidenceSource,
+    meta: &matrix::MatrixMeta,
+) -> Result<(), String> {
+    let Some((repository, revision, path)) = parse_github_blob_source(source) else {
+        return if matches!(
+            evidence,
+            EvidenceSource::PinnedOracle | EvidenceSource::RealProject
+        ) {
+            Err(format!(
+                "{evidence:?} source must be an immutable GitHub blob URL with a full commit and path"
+            ))
+        } else {
+            Ok(())
+        };
+    };
+
+    match evidence {
+        EvidenceSource::PinnedOracle => {
+            if repository == meta.upstream_repo && revision == meta.upstream_pin {
+                Ok(())
+            } else {
+                Err(format!(
+                    "pinned-oracle source must point to {} at the pinned commit",
+                    meta.upstream_repo
+                ))
+            }
+        }
+        EvidenceSource::RealProject => {
+            if repository == meta.upstream_repo {
+                Err(
+                    "real-project source must use its own repository, not the pinned upstream compiler repository"
+                        .into(),
+                )
+            } else if path.is_empty() {
+                Err("real-project source must identify a repository path".into())
+            } else {
+                Ok(())
+            }
+        }
+        EvidenceSource::SemanticContract | EvidenceSource::InternalInvariant => Ok(()),
+    }
+}
+
+fn parse_github_blob_source(source: &str) -> Option<(String, String, String)> {
+    let rest = source.strip_prefix("https://github.com/")?;
+    let (repository, rest) = rest.split_once("/blob/")?;
+    let (revision, path) = rest.split_once('/')?;
+    let mut repository_parts = repository.split('/');
+    let owner = repository_parts.next()?;
+    let name = repository_parts.next()?;
+    if owner.is_empty()
+        || name.is_empty()
+        || repository_parts.next().is_some()
+        || revision.len() != 40
+        || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || path.is_empty()
+        || path.contains('?')
+        || path.contains('#')
+    {
+        return None;
+    }
+    Some((
+        repository.to_string(),
+        revision.to_string(),
+        path.to_string(),
+    ))
+}
+
+fn validate_license(license: &str) -> Result<(), String> {
+    if license.trim().is_empty() {
+        Err("// license: must identify the fixture license".into())
+    } else {
+        Ok(())
+    }
 }
 
 fn infer_evidence(root: &Path, path: &Path, source: &str) -> Option<EvidenceSource> {
@@ -392,4 +473,109 @@ fn expected_matches(expected: ExpectedOutcome, actual: &str) -> bool {
             | (ExpectedOutcome::SemanticError, "semantic-error")
             | (ExpectedOutcome::HirError, "hir-error")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta() -> matrix::MatrixMeta {
+        matrix::MatrixMeta {
+            upstream_repo: "example/ostw".into(),
+            upstream_pin: "0123456789abcdef0123456789abcdef01234567".into(),
+            dialect: "ostw".into(),
+        }
+    }
+
+    #[test]
+    fn pinned_evidence_requires_canonical_commit_url() {
+        let meta = meta();
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/tests/Parser.cs",
+                EvidenceSource::PinnedOracle,
+                &meta,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/deadbeef/tests/Parser.cs",
+                EvidenceSource::PinnedOracle,
+                &meta,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn real_project_requires_its_own_immutable_repository() {
+        let meta = meta();
+        assert!(
+            validate_source(
+                "https://github.com/example/project/blob/0123456789abcdef0123456789abcdef01234567/src/main.del",
+                EvidenceSource::RealProject,
+                &meta,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/src/main.del",
+                EvidenceSource::RealProject,
+                &meta,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn real_project_rejects_mutable_or_incomplete_source_pointers() {
+        let meta = meta();
+        for source in [
+            "https://github.com/example/project/blob/main/src/main.del",
+            "https://github.com/example/project/blob/0123456789abcdef/src/main.del",
+            "https://github.com/example/project/blob/0123456789abcdef0123456789abcdef01234567",
+        ] {
+            assert!(
+                validate_source(source, EvidenceSource::RealProject, &meta).is_err(),
+                "accepted invalid real-project source: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn real_project_metadata_rejects_upstream_compiler_source() {
+        let root = Path::new("/repo");
+        let path = root.join("tests/corpus/projects/real.del");
+        let text = "// source: https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/src/main.del\n// license: MIT\n// expect: ok\n// evidence: real-project\n";
+        let error = parse_metadata(
+            root,
+            &path,
+            text,
+            &matrix::SupportMatrix {
+                meta: meta(),
+                entries: Vec::new(),
+            },
+        )
+        .expect_err("upstream compiler identity must not pass as real-project evidence");
+        assert!(
+            error.contains("own repository"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn license_must_be_present_and_non_empty() {
+        assert!(validate_license("MIT").is_ok());
+        assert!(validate_license("  ").is_err());
+    }
+
+    #[test]
+    fn non_oracle_evidence_can_use_its_own_source_pointer() {
+        let meta = meta();
+        assert!(
+            validate_source("docs/decisions.md", EvidenceSource::SemanticContract, &meta,).is_ok()
+        );
+    }
 }

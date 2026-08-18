@@ -1,6 +1,6 @@
 use del_rs::semantic::provider::{
-    CatalogProvider, EventContext, ExternalBinding, ExternalPosition, ExternalResolution,
-    NameQuery, WorkshopProvider,
+    CatalogProvider, EventContext, ExternalBinding, ExternalCategory, ExternalPosition,
+    ExternalResolution, NameQuery, WorkshopProvider,
 };
 use del_rs::{FileId, Span};
 
@@ -22,7 +22,40 @@ fn catalog_provider_preserves_canonical_action_identity_and_metadata() {
         panic!("expected catalog-backed action binding");
     };
     assert_eq!(action.canonical_id, "smallMessage");
-    assert_eq!(action.params.as_ref().map(Vec::len), Some(2));
+    let params = action.params.expect("action parameters");
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0].name, "VisibleTo");
+    assert!(params[0].optional, "VisibleTo has a catalog default");
+    assert_eq!(params[1].name, "Header");
+    assert!(!params[1].optional, "Header has no catalog default");
+}
+
+#[test]
+fn catalog_provider_resolves_direct_value_identity_and_parameters() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(&[], "Add", ExternalPosition::Value, 2));
+    let ExternalResolution::Known(ExternalBinding::Value(value)) = result else {
+        panic!("expected catalog-backed value binding");
+    };
+    assert_eq!(value.canonical_id, "add");
+    let params = value.signature.expect("value signature").params;
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0].name, "a");
+    assert!(!params[0].optional);
+    assert_eq!(params[1].name, "b");
+    assert!(!params[1].optional);
+}
+
+#[test]
+fn catalog_provider_resolves_enum_type_through_enum_domain() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(&[], "Team", ExternalPosition::Type, 0));
+    let ExternalResolution::Known(ExternalBinding::Type(ty)) = result else {
+        panic!("expected catalog-backed enum type binding");
+    };
+    assert_eq!(ty.canonical_id, "Team");
+    assert_eq!(ty.category, ExternalCategory::EnumLike);
+    assert!(ty.constant);
 }
 
 #[test]
@@ -72,6 +105,28 @@ fn catalog_provider_resolves_enum_member_without_copying_catalog_data() {
         panic!("expected catalog-backed enum binding");
     };
     assert_eq!(value.canonical_id, "Team.ALL");
+}
+
+#[test]
+fn catalog_provider_does_not_accept_undeclared_enum_spellings() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(&["Team"], "all", ExternalPosition::Value, 0));
+    assert!(matches!(result, ExternalResolution::NotFound));
+}
+
+#[test]
+fn catalog_provider_maps_del_enum_spelling_to_catalog_identity() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(
+        &["Button"],
+        "PrimaryFire",
+        ExternalPosition::Value,
+        0,
+    ));
+    let ExternalResolution::Known(ExternalBinding::Value(value)) = result else {
+        panic!("expected catalog-backed enum binding");
+    };
+    assert_eq!(value.canonical_id, "Button.PRIMARY_FIRE");
 }
 
 #[test]
