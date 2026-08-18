@@ -280,10 +280,25 @@ uses only evidence-backed encodings that remain inside those public WIR forms:
   dynamic switches fail closed with `HI018` rather than sharing that global
   temp across players. Recursive materialization and any construct that cannot
   lower to a WIR value also fail closed with `HI018`.
-- Local/parameter storage, foreach, member storage, object lifetime, recursion
-  stacks, and return values remain outside this slice. No HIR layout,
-  parser contract, or canonical WIR node is changed to make them appear
-  supported.
+- Parameter storage, member storage, object lifetime, recursion stacks, and
+  return values remain outside this slice. No HIR layout, parser contract, or
+  canonical WIR node is changed to make them appear supported.
+
+## #31 global scalar foreach slice (2026-08-18)
+
+The bounded `foreach` lowering follows the same storage-first rule. For a
+global Workshop rule whose collection is an array and whose binder is a scalar
+value local, DEL materializes the collection once and initializes a generated
+global index slot once. The emitted `while` compares the index with canonical
+`countOf`, assigns the current element using canonical `valueInArray`, lowers
+the body, then increments the index. The collection and index slots are
+generated deterministically and retain source spans.
+
+Player-context iteration, non-scalar/reference binders, and bodies containing
+internal calls fail closed with `HI018`: sharing global helper slots across
+players or re-entrant execution would change observable semantics. This is a
+DEL adapter policy over the released WIR forms, not a new provider-local WIR
+node or a claim of live Workshop-client execution.
 
 The support matrix remains `lowering-dependent`; these tests are implementation
 evidence for the bounded adapter slice, not end-to-end Workshop execution proof.
