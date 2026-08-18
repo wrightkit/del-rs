@@ -5,21 +5,21 @@ support boundary of the `del-rs` frontend: what is deliberately not
 implemented, and why. The authoritative declared surface is
 [`support-matrix.toml`](support-matrix.toml); state meanings are defined in
 [`compatibility.md`](compatibility.md). Capabilities are classified as
-**lowering-dependent** (concrete Workshop encoding owned by the `workshop-rs`
-integration, issue #8) or **intentionally unsupported** (editor-only or
-outside the language contract), plus a short list of evidence-backed
-approximation areas.
+**lowering-dependent** (concrete Workshop encoding is del-rs #30 work; the
+canonical WIR/catalog contract remains owned by `workshop-rs`) or
+**intentionally unsupported** (editor-only or outside the language contract),
+plus a short list of evidence-backed approximation areas.
 
-## Lowering-dependent (owned by #8 / workshop-rs)
+## Lowering-dependent (del-rs #30 / workshop-rs canonical contract boundary)
 
-- Concrete Workshop emission: actions, values, events, variable slots,
+- Concrete Workshop emission (del-rs #30): actions, values, events, variable slots,
   helper rules, dispatch tables, recursion stacks, reference layouts,
   optimizer choices. The typed HIR expresses intent only
   (`architecture.md` §15).
 - Canonical Workshop catalog data (actions/values/events/constants):
-  `del-rs` never vendors it; the `WorkshopProvider` trait is the documented
-  seam. The `NoopProvider` treats every Workshop-facing name as
-  unresolved-but-legal.
+  `del-rs` never vendors it; `CatalogProvider` reads the released
+  `workshop-rs` catalog through the documented `WorkshopProvider` seam.
+  `NoopProvider` remains available for Workshop-independent workflows.
 - Vanilla Workshop superset bodies (`rule("...")`, `variables {}`,
   `subroutines {}`, `settings {}`, hooks): parsed as opaque token spans with
   no frontend semantics.

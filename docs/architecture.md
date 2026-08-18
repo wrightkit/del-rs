@@ -22,7 +22,8 @@ surface), `provenance.md` (pinned upstream oracle), `syntax-notes.md` (parser re
 
 1. **Single crate at repo root.** Package `del-rs`, library `del_rs`, binary `del-rs`
    (`src/bin/del-rs.rs`). No workspace members. Dependencies: `serde`, `serde_json`, `toml`
-   (diagnostics JSON, `ds.toml`/manifests/matrix). Nothing else; no `workshop-rs` anywhere.
+   (diagnostics JSON, `ds.toml`/manifests/matrix), and the released registry
+   `workshop-rs 0.1.1` catalog core.
 2. **Backend neutrality.** The frontend owns syntax, semantic analysis, diagnostics, provenance,
    and the typed HIR. It must never own canonical Workshop catalog data, WIR, localization, or
    emitter logic. Workshop-facing names bind through one narrow provider trait (§12).
@@ -42,7 +43,7 @@ surface), `provenance.md` (pinned upstream oracle), `syntax-notes.md` (parser re
 | D1 | **Direct typed AST with trivia retention; no separate CST tree.** The parser consumes a token stream that includes trivia tokens (`Whitespace`, `LineComment`, `BlockComment`, `DocComment`); the full `Vec<Token>` is kept on the parse output; AST nodes carry `Span`s. | #3 requires comments/trivia/identifiers/ranges retained "sufficiently for diagnostics and source tooling". A token stream plus spans satisfies every #3 acceptance criterion. A second typed CST tree would duplicate the AST grammar (real maintenance cost while #2 keeps churning the inventory); a generic (rowan-style) CST adds indirection no acceptance criterion needs. Recovery is handled by explicit `Error` AST nodes (§10). |
 | D2 | **AST node = `{ id: NodeId, span: Span, kind: ExprKind }`** (tagged-struct pattern, one shared `NodeId` counter). | Side tables (`type of node`, `symbol of node`) keyed by `NodeId` keep the AST immutable, cheap, and query-friendly; `type_at`/`symbol_at` queries become hash lookups. |
 | D3 | **Unresolved Workshop names are legal.** Semantic analysis resolves user declarations first; anything else goes to `WorkshopProvider::resolve`. A permissive `NoopProvider` returns `NotFound`, and the name is typed `External(...)` with structural checks only (arity when the provider says so, otherwise nothing). | #4 acceptance: Workshop-facing names "can remain externally bound/unresolved through a documented provider contract rather than copied catalog data". This lets every real OSTW project parse and check with zero catalog data. |
-| D4 | **Types live in side tables on the semantic program; HIR is a fully typed tree.** `SemanticProgram::types: HashMap<NodeId, Type>`, `resolution: HashMap<NodeId, Resolution>`. HIR nodes carry `ty: Type` inline because HIR is a fresh tree produced by lowering. | AST stays a pure parse artifact (reusable for edits); HIR consumers (oracle, future workshop-rs adapter) get types inline for free. |
+| D4 | **Types live in side tables on the semantic program; HIR is a fully typed tree.** `SemanticProgram::types: HashMap<NodeId, Type>`, `resolution: HashMap<NodeId, Resolution>`. HIR nodes carry `ty: Type` inline because HIR is a fresh tree produced by lowering. | AST stays a pure parse artifact (reusable for edits); HIR consumers (oracle, the DEL-owned #30 lowering adapter, and the canonical Workshop consumer) get types inline for free. |
 | D5 | **HIR expresses intent, never Workshop encodings.** `new`/`delete` are nodes with lifetime intent; virtual dispatch is `CallTarget::Method { dispatch: Virtual }` (runtime resolves); recursion is legal call-graph cycles with an `is_recursive` storage-intent flag; lambdas are functions with explicit capture lists; global/player/local storage is a `StorageIntent` enum derived from source keywords and rule event context. No slots, no helper rules, no array-of-vector layouts, no reference bit patterns. | #6 non-goals. The oracle (§16) and HIR invariants (§15.4) pin observable intent without encoding it. |
 | D6 | **The semantic oracle is a bounded tree-walking interpreter, not a runtime.** External calls are holes; events never fire; explicit step/recursion limits. | #6 acceptance needs to "distinguish correct/incorrect high-level behavior ... where practical". Bounded scope prevents a second Workshop runtime. |
 
@@ -80,7 +81,7 @@ name = "workshop-lowering.workshop-catalog"
 category = "workshop-lowering"
 state = "lowering-dependent"
 evidence = ["docs/inventory.md"]        # rationale in notes
-notes = "Owned by workshop-rs integration (#8); never modeled in HIR."
+notes = "#34 provides CatalogProvider and canonical catalog identity through workshop-rs 0.1.1; the DEL-owned HIR-to-WIR lowering adapter is del-rs #30 work, while the canonical WIR/catalog contract remains owned by workshop-rs."
 
 [[features]]
 id = "editor.codelens"
@@ -155,6 +156,7 @@ Cargo.toml                 # package del-rs; [lib] name = "del_rs"; [[bin]] name
 src/
   lib.rs                   # crate root: module declarations + public re-exports
   span.rs                  # FileId, Span, LineCol, SourceFile, SourceMap, line/col mapping
+  workshop_source.rs       # DEL source/provenance -> workshop-rs source arena/span bridge
   diagnostics.rs           # Diagnostic, Severity, Phase, RelatedSpan, code registry
   syntax/
     mod.rs                 # syntax facade: parse_source(), ParseOutput
@@ -238,6 +240,21 @@ impl SourceMap {
   conversion concern of the consumer, not this crate.
 - `FileId` is stable across the whole pipeline (parse → semantic → HIR), so spans stay
   comparable everywhere.
+
+### 6.1 Source/provenance bridge
+
+`workshop_source.rs` is a DEL-owned, source-only bridge for the integration boundary. Its
+`WorkshopSourceBridge::from_source_map` inserts each DEL `SourceMap` file into a
+`workshop_rs::arena::Arena<workshop_rs::source::SourceFile>` in source-map order and retains the
+typed DEL `FileId` → Workshop `SourceFileId` mapping. `position` and `span` convert DEL's
+half-open byte offsets to workshop-rs's 1-based `Position` and typed `Span`.
+
+The bridge checks file existence, byte bounds, UTF-8 scalar boundaries, reversed spans, and
+non-UTF-8 paths rather than clamping or lossy-converting provenance. The Workshop source entries
+carry paths only; DEL source text remains owned by the DEL `SourceMap`. This module has no HIR,
+lowering, backend encoding, provider-specific state, or catalog data, so del-rs #36 can reuse or
+extend it later. The DEL-owned HIR-to-WIR lowering adapter is del-rs #30 work, while the
+canonical WIR/catalog contract remains owned by workshop-rs.
 
 ## 7. Lexer
 
@@ -702,10 +719,11 @@ pub fn load_project(opts: ProjectOptions) -> Project;    // total; errors become
 
 ## 12. External provider boundary
 
-The single seam through which Workshop-facing names enter the front end. del-rs owns the trait
-and the permissive default; workshop-rs owns a real implementation later (integration #8,
-blocked on `wrightkit/workshop-rs#2` contracts). No catalog data, enum tables, event tables, or
-builtin signatures live in del-rs.
+The single seam through which Workshop-facing names enter the front end. del-rs owns the trait,
+the permissive default, and the source-language adapter; `CatalogProvider` reads canonical
+identities and metadata from the released registry `workshop-rs 0.1.1` catalog. No catalog data,
+enum tables, event tables, or builtin signatures are copied into del-rs. The provider exposes
+the catalog identity for reproducible diagnostics and tests.
 
 ```rust
 // semantic/provider.rs
@@ -737,26 +755,21 @@ pub enum ExternalBinding {
 }
 
 pub struct ExternalValueInfo {
-    pub ty: ExternalType,                       // Known(category) | Unknown
+    pub canonical_id: String,
+    pub ty: Option<ExternalCategory>,           // known category when declared
     pub signature: Option<ArgSignature>,        // param names + optionality, when known
 }
-pub struct ExternalActionInfo { pub params: Option<Vec<ExternalParam>> }
-pub struct ExternalEventInfo { pub context: Option<EventContext> } // Global | Player | Unknown
-pub struct ExternalTypeInfo { pub category: ExternalCategory, pub constant: bool }
+pub struct ExternalActionInfo { pub canonical_id: String, pub params: Option<Vec<ExternalParam>> }
+pub struct ExternalEventInfo { pub canonical_id: String, pub context: Option<EventContext> } // Global | Player | Unknown
+pub struct ExternalTypeInfo { pub canonical_id: String, pub category: ExternalCategory, pub constant: bool }
 pub struct ArgSignature { pub params: Vec<ExternalParam> }
 pub struct ExternalParam { pub name: String, pub optional: bool }
 
 #[derive(Clone, Copy, Debug)]
 pub enum ExternalCategory { Number, String, Bool, Vector, Entity, Color, EnumLike, Constant, AnyLike }
 
-pub struct ResolutionContext<'a> {
-    pub program: &'a SemanticProgram,
-    pub file: FileId,
-    pub scope: ScopeId,
-}
-
 pub trait WorkshopProvider: Send + Sync {
-    fn resolve(&self, query: &NameQuery, ctx: ResolutionContext<'_>) -> ExternalResolution;
+    fn resolve(&self, query: &NameQuery) -> ExternalResolution;
 }
 
 /// Permissive default: everything is NotFound (unresolved-but-legal).
@@ -764,8 +777,8 @@ pub struct NoopProvider;
 impl WorkshopProvider for NoopProvider { /* NotFound for all queries */ }
 ```
 
-**Semantic interaction contract** (this is the documented contract workshop-rs implements
-later):
+**Semantic interaction contract** (implemented by `del-rs`'s provider seam and the
+`workshop-rs 0.1.1` catalog API):
 
 1. Name resolution order (§13) tries user scopes first; only failures reach the provider.
 2. `NotFound` ⇒ the name is typed `Type::External(ExternalType::Unknown)` (or
@@ -1653,10 +1666,11 @@ the relevant sections above already reflect them. Highlights:
 ## 22. Durable decision record
 
 This document is the decision record for the implemented frontend. D1–D6 (§2) are the
-architecture-level decisions. When the workshop-rs integration (#8) begins, the provider
-contract (§12) and HIR boundary (§15) are the two seams to formalize in an ADR with
-workshop-rs; nothing in this document is contingent on those future decisions beyond the
-documented seams.
+architecture-level decisions. The #34 provider contract (§12) now consumes the released
+`workshop-rs 0.1.1` catalog through public APIs; the DEL-owned HIR-to-WIR lowering adapter
+at the HIR boundary (§15) is del-rs #30 work, while the canonical WIR/catalog contract
+remains owned by workshop-rs. Nothing in this document requires a private Workshop revision or duplicated
+canonical catalog semantics.
 
 ---
 
