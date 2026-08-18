@@ -29,6 +29,30 @@ fn lower(text: &str) -> (workshop_rs::wir::Program, Vec<del_rs::Diagnostic>) {
     (program, diagnostics)
 }
 
+fn lower_files(files: &[(&str, &str)]) -> (workshop_rs::wir::Program, Vec<del_rs::Diagnostic>) {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(10_000);
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let root = std::env::temp_dir().join(format!(
+        "del-rs-workshop-lowering-files-{}-{n}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    for (name, text) in files {
+        std::fs::write(root.join(name), text).unwrap();
+    }
+    let project = load_project(ProjectOptions {
+        root,
+        entry: Some(PathBuf::from("main.del")),
+        config: None,
+    });
+    let provider = CatalogProvider::new().expect("canonical catalog provider");
+    let semantic = check_project(&project, &provider);
+    let mut diagnostics = semantic.diagnostics.clone();
+    let (program, lowering_diags) = lower_project_to_wir(&semantic);
+    diagnostics.extend(lowering_diags);
+    (program, diagnostics)
+}
+
 #[test]
 fn hir_is_backend_neutral_and_hir_only_external_lowering_fails_closed() {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
@@ -103,6 +127,11 @@ rule: "damage" Event.OnDamageDealt if (score > 0) {
         0
     );
     assert_eq!(program.rules.len(), 2);
+    assert!(program
+        .rules
+        .get(workshop_rs::wir::RuleId::from_index(0))
+        .and_then(|rule| rule.span)
+        .is_some());
     let rule = program
         .rules
         .get(workshop_rs::wir::RuleId::from_index(1))
@@ -140,4 +169,217 @@ rule: "unsupported" Event.OngoingGlobal {
     assert!(diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "HI018"));
+}
+
+#[test]
+fn core_control_flow_and_player_storage_lower_to_canonical_wir() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number index = 0;
+globalvar Number[] values = [1, 2];
+playervar Number playerIndex;
+rule: "flow" Event.OngoingGlobal {
+    for (index = 0; index < 3; index = index + 1) {
+        if (index == 1) { index += 2; }
+    }
+    for (index = 0; index < 2; index++) { }
+    switch (index) {
+        case 1: index += 1; break;
+        case 2: index += 2;
+        default: index = 0;
+    }
+    values = [3, 4];
+}
+rule: "player" Event.OngoingPlayer {
+    playerIndex = 1;
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    program.validate().expect("structurally valid WIR");
+    assert_eq!(program.global_variables.len(), 2);
+    assert_eq!(program.player_variables.len(), 1);
+    let dump = program.dump();
+    assert!(dump.contains("while"), "{dump}");
+    assert!(dump.contains("if"), "{dump}");
+    assert!(dump.contains("modifyGlobalVariable index"), "{dump}");
+    assert!(dump.contains("setPlayerVariable"), "{dump}");
+    assert!(dump.contains("setGlobalVariable values"), "{dump}");
+    let flow = program
+        .rules
+        .iter()
+        .find(|rule| rule.name == "flow")
+        .expect("flow rule");
+    assert_eq!(flow.actions.len(), 6);
+    assert!(matches!(
+        program.actions.get(flow.actions[0]),
+        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+    ));
+    let workshop_rs::wir::Action::While { body, .. } =
+        program.actions.get(flow.actions[1]).unwrap()
+    else {
+        panic!("classic for must lower to init plus while")
+    };
+    assert_eq!(
+        body.len(),
+        2,
+        "while body must retain body and classic step"
+    );
+    assert!(matches!(
+        program.actions.get(flow.actions[2]),
+        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+    ));
+    assert!(matches!(
+        program.actions.get(flow.actions[3]),
+        Some(workshop_rs::wir::Action::While { .. })
+    ));
+    let workshop_rs::wir::Action::If {
+        branches,
+        else_body,
+        ..
+    } = program.actions.get(flow.actions[4]).unwrap()
+    else {
+        panic!("switch must lower to canonical if branches")
+    };
+    assert_eq!(branches.len(), 2);
+    assert_eq!(branches[0].body.len(), 1);
+    assert_eq!(
+        branches[1].body.len(),
+        2,
+        "case 2 must fall through to default"
+    );
+    assert_eq!(else_body.as_ref().map(Vec::len), Some(1));
+}
+
+#[test]
+fn named_workshop_arguments_reorder_and_materialize_catalog_defaults() {
+    let (program, diagnostics) = lower(
+        r#"
+rule: "message" Event.OngoingGlobal {
+    SmallMessage(VisibleTo: AllPlayers(Team.All), Header: "Hello");
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    let dump = program.dump();
+    assert!(dump.contains("call smallMessage"), "{dump}");
+    assert!(dump.contains("allPlayers(Team.ALL)"), "{dump}");
+    assert!(dump.contains("\"Hello\""), "{dump}");
+}
+
+#[test]
+fn missing_required_named_workshop_argument_fails_closed() {
+    let (program, diagnostics) = lower(
+        r#"
+rule: "message" Event.OngoingGlobal {
+    SmallMessage(VisibleTo: AllPlayers(Team.All));
+}
+"#,
+    );
+    assert!(program.rules.is_empty());
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "HI018" && diagnostic.message.contains("required")
+        }),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn foreach_remains_explicitly_unsupported_without_a_canonical_wir_form() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number[] values = [1];
+rule: "foreach" Event.OngoingGlobal {
+    foreach (Number value in values) { }
+}
+"#,
+    );
+    assert!(program.rules.is_empty());
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "HI018" && diagnostic.message.contains("foreach")
+        }),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
+fn variable_and_subroutine_allocation_is_deterministic_and_honors_reservations() {
+    let source = r#"
+globalvar Number explicit 2;
+globalvar { "reserved", 0 };
+void First() "First" { }
+void Second() "Second" { First(); }
+rule: "allocation" Event.OngoingGlobal { Second(); }
+"#;
+    let (first, first_diagnostics) = lower(source);
+    let (second, second_diagnostics) = lower(source);
+    assert!(
+        first_diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.is_error()),
+        "{first_diagnostics:?}"
+    );
+    assert!(
+        second_diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.is_error()),
+        "{second_diagnostics:?}"
+    );
+    assert_eq!(first.dump(), second.dump());
+    assert_eq!(first.subroutines.len(), 2);
+    assert!(first.dump().contains("callSubroutine"));
+    assert_eq!(first.global_variables.len(), 2);
+    assert_eq!(
+        first
+            .global_variables
+            .get(workshop_rs::wir::GlobalVarId::from_index(0))
+            .unwrap()
+            .index,
+        2
+    );
+    assert_eq!(
+        first
+            .global_variables
+            .get(workshop_rs::wir::GlobalVarId::from_index(1))
+            .unwrap()
+            .index,
+        0
+    );
+}
+
+#[test]
+fn cross_file_lowering_preserves_source_provenance() {
+    let (program, diagnostics) = lower_files(&[
+        (
+            "main.del",
+            "import \"lib.del\";\nrule: \"main\" Event.OngoingGlobal { }\n",
+        ),
+        (
+            "lib.del",
+            "globalvar Number shared = 1;\nrule: \"library\" Event.OngoingGlobal { shared = 2; }\n",
+        ),
+    ]);
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    let rule = program
+        .rules
+        .iter()
+        .find(|rule| rule.name == "library")
+        .expect("imported rule in WIR");
+    assert_eq!(rule.span.expect("rule provenance").file.index(), 1);
+    let action = program
+        .actions
+        .get(rule.actions[0])
+        .expect("library action");
+    assert_eq!(action.span().expect("action provenance").file.index(), 1);
 }

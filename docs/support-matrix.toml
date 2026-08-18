@@ -609,7 +609,7 @@ id = "workshop-lowering.events"
 name = "workshop-lowering.events"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -617,7 +617,7 @@ id = "workshop-lowering.actions"
 name = "workshop-lowering.actions"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -625,7 +625,7 @@ id = "workshop-lowering.values"
 name = "workshop-lowering.values"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -633,7 +633,7 @@ id = "workshop-lowering.constants"
 name = "workshop-lowering.constants"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -641,7 +641,7 @@ id = "workshop-lowering.variables"
 name = "workshop-lowering.variables"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -689,7 +689,7 @@ id = "workshop-lowering.auto-for"
 name = "workshop-lowering.auto-for"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]
@@ -705,7 +705,7 @@ id = "workshop-lowering.subroutines"
 name = "workshop-lowering.subroutines"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
 notes = "Concrete HIR-to-WIR lowering is del-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
 
 [[features]]

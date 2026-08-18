@@ -26,6 +26,7 @@ fn catalog_provider_preserves_canonical_action_identity_and_metadata() {
     assert_eq!(params.len(), 2);
     assert_eq!(params[0].name, "VisibleTo");
     assert!(params[0].optional, "VisibleTo has a catalog default");
+    assert_eq!(params[0].default.as_deref(), Some("allPlayers"));
     assert_eq!(params[1].name, "Header");
     assert!(!params[1].optional, "Header has no catalog default");
 }

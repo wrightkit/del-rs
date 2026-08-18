@@ -10,7 +10,7 @@ use crate::hir::{
     HirVarId, LiteralValue, StorageIntent,
 };
 use crate::project::Project;
-use crate::semantic::provider::ExternalBinding;
+use crate::semantic::provider::{ExternalBinding, ExternalParam};
 use crate::semantic::resolve::Resolution;
 use crate::semantic::SemanticProgram;
 use crate::span::{FileId, SourceMap, Span};
@@ -18,7 +18,7 @@ use crate::syntax::ast::{
     self, AssignOp, BinaryOp, Expr, ExprKind, FuncBody, Item, ItemKind, Stmt, StmtKind, UnaryOp,
 };
 use std::collections::{HashMap, HashSet};
-use workshop_rs::catalog::Catalog;
+use workshop_rs::catalog::{Catalog, Kind};
 use workshop_rs::source::{Position, SourceFile, Span as WorkshopSpan};
 use workshop_rs::wir;
 
@@ -29,6 +29,10 @@ use workshop_rs::wir;
 /// fail-closed: an unsupported construct never becomes a successful but
 /// semantically incomplete WIR node.
 pub fn lower_to_wir(hir: &HirProgram, sources: &SourceMap) -> (wir::Program, Vec<Diagnostic>) {
+    let hir_diagnostics = crate::hir::validate::validate(hir);
+    if hir_diagnostics.iter().any(Diagnostic::is_error) {
+        return (wir::Program::default(), hir_diagnostics);
+    }
     Lowerer::new(hir, sources, None).run()
 }
 
@@ -39,6 +43,12 @@ pub fn lower_project_to_wir(
     semantic: &crate::semantic::SemanticProgram,
 ) -> (wir::Program, Vec<Diagnostic>) {
     let (hir, mut diagnostics) = crate::hir::lower::lower(semantic);
+    let hir_diagnostics = crate::hir::validate::validate(&hir);
+    if hir_diagnostics.iter().any(Diagnostic::is_error) {
+        diagnostics.extend(hir_diagnostics);
+        return (wir::Program::default(), diagnostics);
+    }
+    diagnostics.extend(hir_diagnostics);
     let context = WorkshopLoweringContext::from_semantic(semantic);
     let (program, mut lowering) =
         lower_to_wir_with_context(&hir, &semantic.project.sources, &context);
@@ -271,6 +281,20 @@ impl WorkshopLoweringContext {
                 self.collect_expr(index, semantic);
             }
             ExprKind::Call(call) => {
+                if let Some(Resolution::External(binding)) = semantic.resolution.get(&expr.id) {
+                    if let Some((name, namespace)) = external_name(&call.callee) {
+                        for span in [expr.span, call.callee.span] {
+                            self.bindings.insert(
+                                ExternalKey {
+                                    span,
+                                    name: name.clone(),
+                                    namespace: namespace.clone(),
+                                },
+                                binding.clone(),
+                            );
+                        }
+                    }
+                }
                 self.collect_expr(&call.callee, semantic);
                 for arg in &call.args {
                     self.collect_expr(&arg.value, semantic);
@@ -414,6 +438,9 @@ impl<'a> Lowerer<'a> {
             }
         }
         self.validate_output();
+        if self.diagnostics.iter().any(Diagnostic::is_error) {
+            return (wir::Program::default(), self.diagnostics);
+        }
         (self.out, self.diagnostics)
     }
 
@@ -445,7 +472,13 @@ impl<'a> Lowerer<'a> {
                 | StorageIntent::Member
                 | StorageIntent::StaticMember
                 | StorageIntent::Parameter
-                | StorageIntent::External => {}
+                | StorageIntent::External => self.unsupported(
+                    var.span,
+                    format!(
+                        "variable '{}' has storage intent {:?} without a core Workshop WIR representation",
+                        var.name, var.storage
+                    ),
+                ),
             }
         }
         for reservation in &self.hir.reservations {
@@ -516,6 +549,8 @@ impl<'a> Lowerer<'a> {
     fn lower_initializers(&mut self) {
         let mut global_actions = Vec::new();
         let mut player_actions = Vec::new();
+        let mut global_span = None;
+        let mut player_span = None;
         for stmt in &self.hir.top {
             let HirStmtKind::VarDecl { var, init } = stmt.kind else {
                 self.unsupported(
@@ -537,6 +572,7 @@ impl<'a> Lowerer<'a> {
             };
             match hir_var.storage {
                 StorageIntent::Global => {
+                    global_span.get_or_insert(stmt.span);
                     if let Some(variable) = self.global_vars.get(&var).copied() {
                         global_actions.push(self.out.actions.push(
                             wir::Action::SetGlobalVariable {
@@ -549,6 +585,7 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 StorageIntent::Player => {
+                    player_span.get_or_insert(stmt.span);
                     if let Some(variable) = self.player_vars.get(&var).copied() {
                         let player = self.out.values.push(wir::ValueNode::new(
                             wir::Value::EventPlayer,
@@ -574,7 +611,7 @@ impl<'a> Lowerer<'a> {
         if !global_actions.is_empty() {
             self.out.rules.push(wir::Rule {
                 name: "Initialize Global Variables".to_string(),
-                span: None,
+                span: global_span.and_then(|span| self.ws_span(span)),
                 name_span: None,
                 disabled: false,
                 event: wir::Event::Global,
@@ -585,7 +622,7 @@ impl<'a> Lowerer<'a> {
         if !player_actions.is_empty() {
             self.out.rules.push(wir::Rule {
                 name: "Initialize Player Variables".to_string(),
-                span: None,
+                span: player_span.and_then(|span| self.ws_span(span)),
                 name_span: None,
                 disabled: false,
                 event: wir::Event::EachPlayer,
@@ -722,7 +759,10 @@ impl<'a> Lowerer<'a> {
     fn lower_stmt(&mut self, stmt: &HirStmt) -> Vec<wir::ActionId> {
         match &stmt.kind {
             HirStmtKind::Block(block) => self.lower_actions(block),
-            HirStmtKind::Expr(expr) => self.lower_expr_action(*expr),
+            HirStmtKind::Expr(expr) => match self.hir.expr(*expr).map(|e| &e.kind) {
+                Some(HirExprKind::Postfix { .. }) => self.lower_postfix_action(*expr),
+                _ => self.lower_expr_action(*expr),
+            },
             HirStmtKind::Assign { target, op, value } => {
                 self.lower_assignment(*target, *op, *value, stmt.span)
             }
@@ -759,13 +799,27 @@ impl<'a> Lowerer<'a> {
                 step,
                 body,
             } => {
+                if self.auto_for_uses_condition(*var, *end) {
+                    if matches!(
+                        self.hir.expr(*step).map(|expr| &expr.kind),
+                        Some(HirExprKind::Postfix { .. })
+                    ) {
+                        return self
+                            .lower_condition_auto_for(stmt.span, *var, *start, *end, *step, body);
+                    }
+                    self.unsupported(
+                        stmt.span,
+                        "condition-based auto-for requires a postfix step for core Workshop lowering",
+                    );
+                    return Vec::new();
+                }
                 let Ok(start) = self.lower_value(*start) else {
                     return Vec::new();
                 };
                 let Ok(stop) = self.lower_value(*end) else {
                     return Vec::new();
                 };
-                let Ok(step) = self.lower_value(*step) else {
+                let Ok(step) = self.lower_loop_step(*step) else {
                     return Vec::new();
                 };
                 let body = self.lower_stmt(body);
@@ -812,6 +866,15 @@ impl<'a> Lowerer<'a> {
                     }
                 }
             }
+            HirStmtKind::For {
+                init,
+                cond,
+                step,
+                body,
+            } => self.lower_for(stmt.span, init.as_deref(), *cond, step.as_deref(), body),
+            HirStmtKind::Switch { scrutinee, arms } => {
+                self.lower_switch(stmt.span, *scrutinee, arms)
+            }
             HirStmtKind::VarDecl { .. } => {
                 self.unsupported(
                     stmt.span,
@@ -819,10 +882,14 @@ impl<'a> Lowerer<'a> {
                 );
                 Vec::new()
             }
-            HirStmtKind::For { .. }
-            | HirStmtKind::Foreach { .. }
-            | HirStmtKind::Switch { .. }
-            | HirStmtKind::Return { .. }
+            HirStmtKind::Foreach { .. } => {
+                self.unsupported(
+                    stmt.span,
+                    "foreach has no canonical representation in released Workshop WIR",
+                );
+                Vec::new()
+            }
+            HirStmtKind::Return { .. }
             | HirStmtKind::Break
             | HirStmtKind::Continue
             | HirStmtKind::Delete { .. }
@@ -835,6 +902,331 @@ impl<'a> Lowerer<'a> {
                 Vec::new()
             }
         }
+    }
+
+    fn auto_for_uses_condition(&self, var: HirVarId, id: HirExprId) -> bool {
+        matches!(
+            self.hir.expr(id).map(|expr| &expr.kind),
+            Some(HirExprKind::Binary {
+                op: BinaryOp::Eq
+                    | BinaryOp::Ne
+                    | BinaryOp::Lt
+                    | BinaryOp::Le
+                    | BinaryOp::Gt
+                    | BinaryOp::Ge,
+                lhs,
+                rhs,
+            }) if matches!(self.hir.expr(*lhs).map(|expr| &expr.kind), Some(HirExprKind::VarRef { var: lhs_var }) if *lhs_var == var)
+                || matches!(self.hir.expr(*rhs).map(|expr| &expr.kind), Some(HirExprKind::VarRef { var: rhs_var }) if *rhs_var == var)
+        )
+    }
+
+    fn lower_condition_auto_for(
+        &mut self,
+        span: Span,
+        var: HirVarId,
+        start: HirExprId,
+        condition: HirExprId,
+        step: HirExprId,
+        body: &HirStmt,
+    ) -> Vec<wir::ActionId> {
+        let Ok(start) = self.lower_value(start) else {
+            return Vec::new();
+        };
+        let Ok(condition) = self.lower_value(condition) else {
+            return Vec::new();
+        };
+        let mut body_actions = self.lower_stmt(body);
+        let step_action = self.lower_postfix_action(step);
+        body_actions.extend(step_action);
+        let target_span = self
+            .hir
+            .vars
+            .get(var as usize)
+            .and_then(|v| self.ws_span(v.span));
+        let init = match (
+            self.global_vars.get(&var).copied(),
+            self.player_vars.get(&var).copied(),
+        ) {
+            (Some(variable), _) => self.out.actions.push(wir::Action::SetGlobalVariable {
+                variable,
+                value: start,
+                span: self.ws_span(span),
+                target_span,
+            }),
+            (None, Some(variable)) => {
+                let player = self.out.values.push(wir::ValueNode::new(
+                    wir::Value::EventPlayer,
+                    self.ws_span(span),
+                ));
+                self.out.actions.push(wir::Action::SetPlayerVariable {
+                    player,
+                    variable,
+                    value: start,
+                    span: self.ws_span(span),
+                    target_span,
+                })
+            }
+            _ => {
+                self.unsupported(
+                    span,
+                    "condition-based for-loop variable has no canonical Workshop storage",
+                );
+                return Vec::new();
+            }
+        };
+        let loop_action = self.out.actions.push(wir::Action::While {
+            condition,
+            body: body_actions,
+            span: self.ws_span(span),
+        });
+        vec![init, loop_action]
+    }
+
+    fn lower_loop_step(&mut self, id: HirExprId) -> Result<wir::ValueId, ()> {
+        let Some(expr) = self.hir.expr(id).cloned() else {
+            self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
+            return Err(());
+        };
+        if let HirExprKind::Postfix { op, .. } = expr.kind {
+            let value = match op {
+                crate::syntax::ast::PostfixOp::Increment => 1.0,
+                crate::syntax::ast::PostfixOp::Decrement => -1.0,
+            };
+            return Ok(self.out.values.push(wir::ValueNode::new(
+                wir::Value::Number {
+                    value,
+                    text: format_number(value),
+                },
+                self.ws_span(expr.span),
+            )));
+        }
+        self.lower_value(id)
+    }
+
+    fn loop_target(&self, stmt: &HirStmt) -> Option<HirVarId> {
+        match &stmt.kind {
+            HirStmtKind::VarDecl { var, .. } => Some(*var),
+            HirStmtKind::Assign { target, .. } => match self.hir.expr(*target)?.kind {
+                HirExprKind::VarRef { var } => Some(var),
+                _ => None,
+            },
+            HirStmtKind::Expr(expr) => match self.hir.expr(*expr)?.kind {
+                HirExprKind::Assign { target, .. } => match self.hir.expr(target)?.kind {
+                    HirExprKind::VarRef { var } => Some(var),
+                    _ => None,
+                },
+                HirExprKind::Postfix { operand, .. } => match self.hir.expr(operand)?.kind {
+                    HirExprKind::VarRef { var } => Some(var),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn lower_for(
+        &mut self,
+        span: Span,
+        init: Option<&HirStmt>,
+        cond: Option<HirExprId>,
+        step: Option<&HirStmt>,
+        body: &HirStmt,
+    ) -> Vec<wir::ActionId> {
+        let Some(init) = init else {
+            self.unsupported(span, "classic for-loop has no canonical start expression");
+            return Vec::new();
+        };
+        let Some(var) = self.loop_target(init) else {
+            self.unsupported(
+                span,
+                "classic for-loop initializer is not a Workshop variable",
+            );
+            return Vec::new();
+        };
+        let init_actions = match &init.kind {
+            HirStmtKind::Assign { .. } | HirStmtKind::Expr(_) => self.lower_stmt(init),
+            _ => {
+                self.unsupported(
+                    span,
+                    "classic for-loop initializer must assign its loop variable",
+                );
+                return Vec::new();
+            }
+        };
+        if init_actions.is_empty() {
+            return Vec::new();
+        }
+        let Some(cond) = cond else {
+            self.unsupported(span, "classic for-loop has no canonical stop expression");
+            return Vec::new();
+        };
+        let Ok(stop) = self.lower_value(cond) else {
+            return Vec::new();
+        };
+        let Some(step_stmt) = step else {
+            self.unsupported(span, "classic for-loop has no canonical step expression");
+            return Vec::new();
+        };
+        if self.loop_target(step_stmt) != Some(var) {
+            self.unsupported(
+                step_stmt.span,
+                "classic for-loop step does not update its loop variable",
+            );
+            return Vec::new();
+        }
+        let step_actions = match &step_stmt.kind {
+            HirStmtKind::Assign { .. } | HirStmtKind::Expr(_) => self.lower_stmt(step_stmt),
+            _ => {
+                self.unsupported(
+                    step_stmt.span,
+                    "classic for-loop step has no core WIR representation",
+                );
+                return Vec::new();
+            }
+        };
+        if step_actions.is_empty() {
+            return Vec::new();
+        }
+        let mut body = self.lower_stmt(body);
+        body.extend(step_actions);
+        let loop_action = self.out.actions.push(wir::Action::While {
+            condition: stop,
+            body,
+            span: self.ws_span(span),
+        });
+        let mut actions = init_actions;
+        actions.push(loop_action);
+        actions
+    }
+
+    fn lower_postfix_action(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
+        let Some(expr) = self.hir.expr(id).cloned() else {
+            self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
+            return Vec::new();
+        };
+        let HirExprKind::Postfix { op, operand } = expr.kind else {
+            self.unsupported(expr.span, "expression is not a postfix loop step");
+            return Vec::new();
+        };
+        let Some(HirExprKind::VarRef { var }) = self.hir.expr(operand).map(|e| e.kind.clone())
+        else {
+            self.unsupported(
+                expr.span,
+                "postfix loop step does not target a Workshop variable",
+            );
+            return Vec::new();
+        };
+        let value = self.out.values.push(wir::ValueNode::new(
+            wir::Value::Number {
+                value: 1.0,
+                text: "1".to_string(),
+            },
+            self.ws_span(expr.span),
+        ));
+        let modify = match op {
+            crate::syntax::ast::PostfixOp::Increment => wir::ModifyOp::Add,
+            crate::syntax::ast::PostfixOp::Decrement => wir::ModifyOp::Subtract,
+        };
+        let target_span = self
+            .hir
+            .vars
+            .get(var as usize)
+            .and_then(|v| self.ws_span(v.span));
+        match (
+            self.global_vars.get(&var).copied(),
+            self.player_vars.get(&var).copied(),
+        ) {
+            (Some(variable), _) => vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
+                variable,
+                op: modify,
+                value,
+                span: self.ws_span(expr.span),
+                target_span,
+            })],
+            (None, Some(variable)) => {
+                let player = self.out.values.push(wir::ValueNode::new(
+                    wir::Value::EventPlayer,
+                    self.ws_span(expr.span),
+                ));
+                vec![self.out.actions.push(wir::Action::ModifyPlayerVariable {
+                    player,
+                    variable,
+                    op: modify,
+                    value,
+                    span: self.ws_span(expr.span),
+                    target_span,
+                })]
+            }
+            _ => {
+                self.unsupported(
+                    expr.span,
+                    "postfix loop step has no canonical Workshop storage",
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    fn lower_switch(
+        &mut self,
+        span: Span,
+        scrutinee: HirExprId,
+        arms: &[crate::hir::HirSwitchArm],
+    ) -> Vec<wir::ActionId> {
+        let Ok(scrutinee) = self.lower_value(scrutinee) else {
+            return Vec::new();
+        };
+        let mut branches = Vec::new();
+        let mut default_body = None;
+        for (index, arm) in arms.iter().enumerate() {
+            if arm.label.is_none() {
+                default_body = Some(self.lower_switch_arm_body(arms, index));
+                continue;
+            }
+            let Some(label) = arm.label else { continue };
+            let Ok(label) = self.lower_value(label) else {
+                return Vec::new();
+            };
+            let condition = self.out.values.push(wir::ValueNode::new(
+                wir::Value::Call {
+                    name: "==".to_string(),
+                    args: vec![scrutinee, label],
+                },
+                self.ws_span(arm.span),
+            ));
+            branches.push(wir::IfBranch {
+                condition,
+                body: self.lower_switch_arm_body(arms, index),
+            });
+        }
+        if branches.is_empty() && default_body.is_none() {
+            self.unsupported(span, "switch has no canonical case or default arm");
+            return Vec::new();
+        }
+        vec![self.out.actions.push(wir::Action::If {
+            branches,
+            else_body: default_body,
+            span: self.ws_span(span),
+        })]
+    }
+
+    fn lower_switch_arm_body(
+        &mut self,
+        arms: &[crate::hir::HirSwitchArm],
+        start: usize,
+    ) -> Vec<wir::ActionId> {
+        let mut actions = Vec::new();
+        for arm in arms.iter().skip(start) {
+            for stmt in &arm.stmts {
+                if matches!(stmt.kind, HirStmtKind::Break) {
+                    return actions;
+                }
+                actions.extend(self.lower_stmt(stmt));
+            }
+        }
+        actions
     }
 
     fn lower_expr_action(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
@@ -863,7 +1255,7 @@ impl<'a> Lowerer<'a> {
                         );
                         return Vec::new();
                     };
-                    let Ok(args) = self.lower_args(&args) else {
+                    let Ok(args) = self.lower_args(&args, info.params.as_deref()) else {
                         return Vec::new();
                     };
                     vec![self.out.actions.push(wir::Action::Call {
@@ -993,22 +1385,160 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_args(&mut self, args: &[HirArg]) -> Result<Vec<wir::ValueId>, ()> {
-        let mut values = Vec::with_capacity(args.len());
+    fn lower_args(
+        &mut self,
+        args: &[HirArg],
+        params: Option<&[ExternalParam]>,
+    ) -> Result<Vec<wir::ValueId>, ()> {
+        let Some(params) = params else {
+            let mut values = Vec::with_capacity(args.len());
+            for arg in args {
+                match arg {
+                    HirArg::Pos(value) => values.push(self.lower_value(*value)?),
+                    HirArg::Named { .. } => {
+                        self.unsupported(
+                            self.hir_arg_span(arg),
+                            "named argument has no canonical parameter metadata",
+                        );
+                        return Err(());
+                    }
+                }
+            }
+            return Ok(values);
+        };
+        let mut slots = vec![None; params.len()];
+        let mut next_pos = 0;
         for arg in args {
-            match arg {
-                HirArg::Pos(value) => values.push(self.lower_value(*value)?),
-                HirArg::Named { .. } => {
-                    let span = self.hir_arg_span(arg);
+            let (index, value) = match arg {
+                HirArg::Pos(value) => {
+                    while next_pos < slots.len() && slots[next_pos].is_some() {
+                        next_pos += 1;
+                    }
+                    if next_pos >= slots.len() {
+                        self.unsupported(
+                            self.hir_arg_span(arg),
+                            "too many canonical Workshop arguments",
+                        );
+                        return Err(());
+                    }
+                    let index = next_pos;
+                    next_pos += 1;
+                    (index, *value)
+                }
+                HirArg::Named { name, value } => {
+                    let Some(index) = params.iter().position(|param| param.name == *name) else {
+                        self.unsupported(
+                            self.hir_arg_span(arg),
+                            format!("unknown canonical Workshop parameter '{name}'"),
+                        );
+                        return Err(());
+                    };
+                    if slots[index].is_some() {
+                        self.unsupported(
+                            self.hir_arg_span(arg),
+                            format!("duplicate canonical Workshop parameter '{name}'"),
+                        );
+                        return Err(());
+                    }
+                    (index, *value)
+                }
+            };
+            slots[index] = Some(self.lower_value(value)?);
+        }
+        let highest = slots.iter().rposition(Option::is_some);
+        for index in 0..params.len() {
+            if slots[index].is_none() && !params[index].optional {
+                self.unsupported(
+                    self.fallback_span(),
+                    format!(
+                        "missing required canonical Workshop parameter '{}'",
+                        params[index].name
+                    ),
+                );
+                return Err(());
+            }
+        }
+        let Some(highest) = highest else {
+            return Ok(Vec::new());
+        };
+        for index in 0..=highest {
+            if slots[index].is_none() {
+                let Some(default) = params[index].default.as_deref() else {
+                    self.unsupported(
+                        self.fallback_span(),
+                        format!(
+                            "canonical Workshop parameter '{}' has no materializable default",
+                            params[index].name
+                        ),
+                    );
+                    return Err(());
+                };
+                slots[index] = Some(self.lower_catalog_default(default, self.fallback_span())?);
+            }
+        }
+        Ok(slots.into_iter().take(highest + 1).flatten().collect())
+    }
+
+    fn lower_catalog_default(&mut self, default: &str, span: Span) -> Result<wir::ValueId, ()> {
+        let value = if default == "null" {
+            wir::Value::Null
+        } else if default == "eventPlayer" {
+            wir::Value::EventPlayer
+        } else if let Ok(number) = default.parse::<f64>() {
+            wir::Value::Number {
+                value: number,
+                text: format_number(number),
+            }
+        } else if let Some((value_type, value)) = default.split_once('.') {
+            wir::Value::Enum {
+                value_type: value_type.to_string(),
+                value: value.to_string(),
+            }
+        } else if (default.starts_with('"') && default.ends_with('"'))
+            || (default.starts_with('\'') && default.ends_with('\''))
+        {
+            wir::Value::String(unquote(default))
+        } else {
+            let catalog = match Catalog::builtin() {
+                Ok(catalog) => catalog,
+                Err(error) => {
                     self.unsupported(
                         span,
-                        "named Workshop action arguments require canonical parameter ordering",
+                        format!("canonical Workshop catalog could not be loaded: {error}"),
                     );
                     return Err(());
                 }
+            };
+            let Some(entry) = catalog.entry(Kind::Value, default) else {
+                self.unsupported(
+                    span,
+                    format!("catalog default '{default}' has no core WIR materialization"),
+                );
+                return Err(());
+            };
+            let mut args = Vec::with_capacity(entry.params.len());
+            for (index, parameter) in entry.params.iter().enumerate() {
+                let Some(default) = entry.param_defaults.get(index).and_then(Option::as_deref)
+                else {
+                    self.unsupported(
+                        span,
+                        format!(
+                            "catalog default value '{default}' requires parameter '{parameter}'"
+                        ),
+                    );
+                    return Err(());
+                };
+                args.push(self.lower_catalog_default(default, span)?);
             }
-        }
-        Ok(values)
+            wir::Value::Call {
+                name: entry.id.clone(),
+                args,
+            }
+        };
+        Ok(self
+            .out
+            .values
+            .push(wir::ValueNode::new(value, self.ws_span(span))))
     }
 
     fn lower_value(&mut self, id: HirExprId) -> Result<wir::ValueId, ()> {
@@ -1049,54 +1579,59 @@ impl<'a> Lowerer<'a> {
                 };
                 self.value_from_binding(binding, Vec::new(), expr.span)?
             }
-            HirExprKind::Call { target, args } => {
-                let args = self.lower_args(&args)?;
-                match target {
-                    CallTarget::External {
-                        name,
-                        namespace,
-                        span: callee_span,
-                    } => {
-                        let Some(binding) = self.external_binding(callee_span, &name, &namespace)
-                        else {
-                            return Err(());
-                        };
-                        self.value_from_binding(binding, args, expr.span)?
-                    }
-                    CallTarget::BuiltinArrayMethod { member, base } => {
-                        let mut all = vec![self.lower_value(base)?];
-                        all.extend(args);
-                        let name = match member {
-                            crate::hir::BuiltinArrayMember::Length => "countOf",
-                            crate::hir::BuiltinArrayMember::IndexOf => "indexOfArrayValue",
-                            crate::hir::BuiltinArrayMember::First => "firstOf",
-                            crate::hir::BuiltinArrayMember::Last => "lastOf",
-                            crate::hir::BuiltinArrayMember::Random => "randomValueInArray",
-                            crate::hir::BuiltinArrayMember::Contains => "arrayContains",
-                            crate::hir::BuiltinArrayMember::SortedArray => "sortedArray",
-                            crate::hir::BuiltinArrayMember::FilteredArray => "filteredArray",
-                            _ => {
-                                self.unsupported(
-                                    expr.span,
-                                    "array method has no canonical core WIR lowering",
-                                );
-                                return Err(());
-                            }
-                        };
-                        wir::Value::Call {
-                            name: name.to_string(),
-                            args: all,
-                        }
-                    }
-                    _ => {
-                        self.unsupported(
-                            expr.span,
-                            "value call has no canonical Workshop value binding",
-                        );
+            HirExprKind::Call { target, args } => match target {
+                CallTarget::External {
+                    name,
+                    namespace,
+                    span: callee_span,
+                } => {
+                    let Some(binding) = self.external_binding(callee_span, &name, &namespace)
+                    else {
                         return Err(());
+                    };
+                    let params = match &binding {
+                        ExternalBinding::Value(info) => {
+                            info.signature.as_ref().map(|s| s.params.as_slice())
+                        }
+                        _ => None,
+                    };
+                    let args = self.lower_args(&args, params)?;
+                    self.value_from_binding(binding, args, expr.span)?
+                }
+                CallTarget::BuiltinArrayMethod { member, base } => {
+                    let args = self.lower_args(&args, None)?;
+                    let mut all = vec![self.lower_value(base)?];
+                    all.extend(args);
+                    let name = match member {
+                        crate::hir::BuiltinArrayMember::Length => "countOf",
+                        crate::hir::BuiltinArrayMember::IndexOf => "indexOfArrayValue",
+                        crate::hir::BuiltinArrayMember::First => "firstOf",
+                        crate::hir::BuiltinArrayMember::Last => "lastOf",
+                        crate::hir::BuiltinArrayMember::Random => "randomValueInArray",
+                        crate::hir::BuiltinArrayMember::Contains => "arrayContains",
+                        crate::hir::BuiltinArrayMember::SortedArray => "sortedArray",
+                        crate::hir::BuiltinArrayMember::FilteredArray => "filteredArray",
+                        _ => {
+                            self.unsupported(
+                                expr.span,
+                                "array method has no canonical core WIR lowering",
+                            );
+                            return Err(());
+                        }
+                    };
+                    wir::Value::Call {
+                        name: name.to_string(),
+                        args: all,
                     }
                 }
-            }
+                _ => {
+                    self.unsupported(
+                        expr.span,
+                        "value call has no canonical Workshop value binding",
+                    );
+                    return Err(());
+                }
+            },
             HirExprKind::Binary { op, lhs, rhs } => {
                 let name = binary_name(op);
                 let args = vec![self.lower_value(lhs)?, self.lower_value(rhs)?];
@@ -1256,13 +1791,21 @@ impl<'a> Lowerer<'a> {
                 format!("canonical WIR validation failed: {error}"),
             );
         }
-        if let Ok(catalog) = Catalog::builtin() {
-            if let Err(error) = workshop_rs::validate::validate_canonical_ids(&self.out, &catalog) {
-                self.unsupported(
-                    self.fallback_span(),
-                    format!("canonical Workshop identity validation failed: {error}"),
-                );
+        match Catalog::builtin() {
+            Ok(catalog) => {
+                if let Err(error) =
+                    workshop_rs::validate::validate_canonical_ids(&self.out, &catalog)
+                {
+                    self.unsupported(
+                        self.fallback_span(),
+                        format!("canonical Workshop identity validation failed: {error}"),
+                    );
+                }
             }
+            Err(error) => self.unsupported(
+                self.fallback_span(),
+                format!("canonical Workshop catalog could not be loaded: {error}"),
+            ),
         }
     }
 

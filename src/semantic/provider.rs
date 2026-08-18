@@ -107,6 +107,10 @@ pub struct ArgSignature {
 pub struct ExternalParam {
     pub name: String,
     pub optional: bool,
+    /// Canonical catalog default, when the public catalog declares one.
+    /// The lowering adapter may materialize this value when a named argument
+    /// skips an earlier parameter; the HIR remains catalog-independent.
+    pub default: Option<String>,
 }
 
 /// Permissive default: everything is `NotFound` (unresolved-but-legal).
@@ -411,6 +415,7 @@ fn parameters(entry: &CatalogEntry) -> Vec<ExternalParam> {
                 .get(index)
                 .and_then(Option::as_ref)
                 .is_some(),
+            default: entry.param_defaults.get(index).cloned().flatten(),
         })
         .collect()
 }
