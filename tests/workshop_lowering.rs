@@ -292,7 +292,7 @@ rule: "message" Event.OngoingGlobal {
 }
 
 #[test]
-fn foreach_remains_explicitly_unsupported_without_a_canonical_wir_form() {
+fn foreach_is_a_del_owned_runtime_gap_and_fails_closed() {
     let (program, diagnostics) = lower(
         r#"
 globalvar Number[] values = [1];
@@ -304,10 +304,61 @@ rule: "foreach" Event.OngoingGlobal {
     assert!(program.rules.is_empty());
     assert!(
         diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "HI018" && diagnostic.message.contains("foreach")
+            diagnostic.code == "HI018"
+                && diagnostic.message.contains("DEL-owned")
+                && diagnostic.message.contains("#31")
         }),
         "{diagnostics:?}"
     );
+}
+
+#[test]
+fn stable_switch_scrutinee_is_lowered_without_materialization() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number value = 1;
+rule: "stable-switch" Event.OngoingGlobal {
+    switch (value) {
+        case 1: value = 2; break;
+        default: value = 0;
+    }
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    let rule = program
+        .rules
+        .iter()
+        .find(|rule| rule.name == "stable-switch")
+        .expect("stable switch rule");
+    assert!(matches!(
+        program.actions.get(rule.actions[0]),
+        Some(workshop_rs::wir::Action::If { branches, .. }) if branches.len() == 1
+    ));
+}
+
+#[test]
+fn dynamic_switch_scrutinee_fails_closed_without_runtime_materialization() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number value = 0;
+rule: "dynamic-switch" Event.OngoingGlobal {
+    switch (Add(1, 2)) {
+        case 3: value = 1; break;
+        default: value = 0;
+    }
+}
+"#,
+    );
+    assert!(program.rules.is_empty());
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "HI018"
+            && diagnostic.message.contains("single-evaluation")
+            && diagnostic.message.contains("runtime materialization")
+    }), "{diagnostics:?}");
 }
 
 #[test]

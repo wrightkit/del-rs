@@ -885,7 +885,7 @@ impl<'a> Lowerer<'a> {
             HirStmtKind::Foreach { .. } => {
                 self.unsupported(
                     stmt.span,
-                    "foreach has no canonical representation in released Workshop WIR",
+                    "DEL-owned foreach lowering/runtime gap depends on the storage/runtime strategy tracked in #31",
                 );
                 Vec::new()
             }
@@ -1175,6 +1175,18 @@ impl<'a> Lowerer<'a> {
         scrutinee: HirExprId,
         arms: &[crate::hir::HirSwitchArm],
     ) -> Vec<wir::ActionId> {
+        if !self.switch_scrutinee_is_stable(scrutinee) {
+            let scrutinee_span = self
+                .hir
+                .expr(scrutinee)
+                .map(|expr| expr.span)
+                .unwrap_or(span);
+            self.unsupported(
+                scrutinee_span,
+                "switch scrutinee cannot preserve single-evaluation semantics across repeated case comparisons without runtime materialization",
+            );
+            return Vec::new();
+        }
         let Ok(scrutinee) = self.lower_value(scrutinee) else {
             return Vec::new();
         };
@@ -1210,6 +1222,20 @@ impl<'a> Lowerer<'a> {
             else_body: default_body,
             span: self.ws_span(span),
         })]
+    }
+
+    fn switch_scrutinee_is_stable(&self, id: HirExprId) -> bool {
+        match self.hir.expr(id).map(|expr| &expr.kind) {
+            Some(HirExprKind::Literal(_)) => true,
+            Some(HirExprKind::VarRef { var }) => {
+                self.global_vars.contains_key(var) || self.player_vars.contains_key(var)
+            }
+            Some(HirExprKind::Convert { from, .. })
+            | Some(HirExprKind::Cast { expr: from, .. }) => {
+                self.switch_scrutinee_is_stable(*from)
+            }
+            _ => false,
+        }
     }
 
     fn lower_switch_arm_body(

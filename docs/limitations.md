@@ -29,6 +29,15 @@ plus a short list of evidence-backed approximation areas.
   interpreted.
 - Decompiler, optimizer, emulator, pathfinding tooling: inventory entries,
   not implemented (matrix `compiler-utility` / `decompiler`).
+- `foreach` is a DEL-owned lowering/runtime gap. The #30 lowering path fails
+  closed with `HI018` until the storage/runtime strategy tracked in #31 exists;
+  this is not a claim that canonical `workshop-rs` WIR is missing a
+  provider-local `Foreach` node.
+- Switch lowering repeats the scrutinee reference in generated comparisons.
+  #30 therefore accepts only literals and canonical global/player variable
+  references (including pure conversion wrappers); calls, random/dynamic
+  values, and other unstable expressions fail closed with `HI018` until
+  runtime materialization is owned by the appropriate runtime work.
 
 ## Intentionally unsupported
 
