@@ -967,8 +967,8 @@ pub fn resolve_call(
 - Defaults: missing trailing params must have `default` expressions (`SM009` if not). The
   default expression is checked in the callee's scope at the declaration site.
 - Named args: `Name: value`; names must exist (`SM010`), no duplicates (`SM011`); positional
-  args fill remaining params in order before named args (corpus Q-5); params must not be
-  double-filled (`SM012`).
+  args must precede named args (`SM053`) and fill remaining params in order; params must not
+  be double-filled (`SM012`).
 - Method group as value: `func = A;` — overloads filtered by the assignment target
   `FunctionType`; zero/ambiguous matches → `SM013`.
 - `Invoke`: `f(args)` on a `FunctionValue`-typed expression is a call; `.Invoke(args)` is a
