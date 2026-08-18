@@ -679,6 +679,7 @@ rule: "side-effect" Event.OngoingGlobal { Target(Producer()); }
         assert!(program.subroutines.is_empty(), "{source}");
         assert!(program.actions.is_empty(), "{source}");
         assert!(program.values.is_empty(), "{source}");
+        assert!(program.files.is_empty(), "{source}");
         assert!(
             diagnostics.iter().any(|diagnostic| {
                 diagnostic.code == "HI018" && diagnostic.message.contains(message)
