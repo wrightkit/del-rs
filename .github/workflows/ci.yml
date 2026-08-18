@@ -24,13 +24,18 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: linux-ci
+          cache-targets: true
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: false
       - name: Build
-        run: cargo build --all-targets
+        run: cargo build --locked --all-targets
       - name: Test
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
       - name: Matrix check (mechanical gate)
-        run: cargo test --test matrix
+        run: cargo test --locked --test matrix
       - name: Corpus harness
-        run: cargo test --test corpus
+        run: cargo test --locked --test corpus
