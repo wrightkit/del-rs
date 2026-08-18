@@ -5,7 +5,6 @@
 //! intent — without any Workshop encoding (no slots, no helper rules, no
 //! reference bit layouts).
 
-use crate::semantic::provider::ExternalBinding;
 use crate::semantic::types::Type;
 use crate::span::Span;
 use std::collections::HashMap;
@@ -269,7 +268,6 @@ pub enum HirExprKind {
     External {
         name: String,
         namespace: Vec<String>,
-        binding: Option<ExternalBinding>,
     },
     Error,
 }
@@ -308,7 +306,9 @@ pub enum CallTarget {
     External {
         name: String,
         namespace: Vec<String>,
-        binding: Option<ExternalBinding>,
+        /// The source span of the external callee. Provider bindings are
+        /// resolved later by the DEL-owned lowering context.
+        span: Span,
     },
 }
 

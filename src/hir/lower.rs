@@ -709,15 +709,13 @@ impl<'a> Lowerer<'a> {
                 HirExprKind::External {
                     name: self.ident_name(e),
                     namespace: Vec::new(),
-                    binding: self.external_binding(e.id),
                 }
             }
             ExprKind::Member { base, name } => {
-                if let Some(binding) = self.external_binding(e.id) {
+                if matches!(self.program.resolution.get(&e.id), Some(Resolution::External(_))) {
                     HirExprKind::External {
                         name: name.name.clone(),
                         namespace: self.member_namespace(base),
-                        binding: Some(binding),
                     }
                 } else {
                     HirExprKind::Member {
@@ -793,7 +791,6 @@ impl<'a> Lowerer<'a> {
                 HirExprKind::External {
                     name: String::new(),
                     namespace: Vec::new(),
-                    binding: None,
                 }
             }
             ExprKind::This => HirExprKind::This { class: 0 },
@@ -931,7 +928,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: id.name.clone(),
                             namespace: Vec::new(),
-                            binding: self.external_binding(call.callee.id),
+                            span: call.callee.span,
                         },
                         args,
                     }
@@ -940,7 +937,7 @@ impl<'a> Lowerer<'a> {
                     target: CallTarget::External {
                         name: id.name.clone(),
                         namespace: Vec::new(),
-                        binding: self.external_binding(call.callee.id),
+                        span: call.callee.span,
                     },
                     args,
                 },
@@ -1008,7 +1005,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: name.name.clone(),
                             namespace: self.member_namespace(base),
-                            binding: self.external_binding(call.callee.id),
+                            span: call.callee.span,
                         },
                         args,
                     },
@@ -1030,13 +1027,6 @@ impl<'a> Lowerer<'a> {
                 p
             }
             _ => Vec::new(),
-        }
-    }
-
-    fn external_binding(&self, node: NodeId) -> Option<ExternalBinding> {
-        match self.program.resolution.get(&node) {
-            Some(Resolution::External(binding)) => Some(binding.clone()),
-            _ => None,
         }
     }
 

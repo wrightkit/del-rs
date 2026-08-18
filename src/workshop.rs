@@ -11,8 +11,12 @@ use crate::hir::{
 };
 use crate::project::Project;
 use crate::semantic::provider::ExternalBinding;
+use crate::semantic::resolve::Resolution;
+use crate::semantic::SemanticProgram;
 use crate::span::{FileId, SourceMap, Span};
-use crate::syntax::ast::{AssignOp, BinaryOp, UnaryOp};
+use crate::syntax::ast::{
+    self, AssignOp, BinaryOp, Expr, ExprKind, FuncBody, Item, ItemKind, Stmt, StmtKind, UnaryOp,
+};
 use std::collections::{HashMap, HashSet};
 use workshop_rs::catalog::Catalog;
 use workshop_rs::source::{Position, SourceFile, Span as WorkshopSpan};
@@ -25,7 +29,7 @@ use workshop_rs::wir;
 /// fail-closed: an unsupported construct never becomes a successful but
 /// semantically incomplete WIR node.
 pub fn lower_to_wir(hir: &HirProgram, sources: &SourceMap) -> (wir::Program, Vec<Diagnostic>) {
-    Lowerer::new(hir, sources).run()
+    Lowerer::new(hir, sources, None).run()
 }
 
 /// Convenience entry point for callers that still own the checked semantic
@@ -35,9 +39,19 @@ pub fn lower_project_to_wir(
     semantic: &crate::semantic::SemanticProgram,
 ) -> (wir::Program, Vec<Diagnostic>) {
     let (hir, mut diagnostics) = crate::hir::lower::lower(semantic);
-    let (program, mut lowering) = lower_to_wir(&hir, &semantic.project.sources);
+    let context = WorkshopLoweringContext::from_semantic(semantic);
+    let (program, mut lowering) =
+        lower_to_wir_with_context(&hir, &semantic.project.sources, &context);
     diagnostics.append(&mut lowering);
     (program, diagnostics)
+}
+
+fn lower_to_wir_with_context(
+    hir: &HirProgram,
+    sources: &SourceMap,
+    context: &WorkshopLoweringContext,
+) -> (wir::Program, Vec<Diagnostic>) {
+    Lowerer::new(hir, sources, Some(context)).run()
 }
 
 /// Lower a checked project directly. This preserves the public project
@@ -50,9 +64,309 @@ pub fn lower_project(
     lower_project_to_wir(&semantic)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ExternalKey {
+    span: Span,
+    name: String,
+    namespace: Vec<String>,
+}
+
+/// DEL-owned bridge from semantic provider resolution to canonical WIR
+/// lowering. Provider bindings deliberately never cross into backend-neutral
+/// HIR.
+struct WorkshopLoweringContext {
+    bindings: HashMap<ExternalKey, ExternalBinding>,
+}
+
+impl WorkshopLoweringContext {
+    fn from_semantic(semantic: &SemanticProgram) -> Self {
+        let mut context = Self {
+            bindings: HashMap::new(),
+        };
+        for ast in semantic.asts.values() {
+            for item in &ast.items {
+                context.collect_item(item, semantic);
+            }
+        }
+        context
+    }
+
+    fn lookup(&self, span: Span, name: &str, namespace: &[String]) -> Option<ExternalBinding> {
+        self.bindings
+            .get(&ExternalKey {
+                span,
+                name: name.to_string(),
+                namespace: namespace.to_vec(),
+            })
+            .cloned()
+    }
+
+    fn collect_item(&mut self, item: &Item, semantic: &SemanticProgram) {
+        match &item.kind {
+            ItemKind::Rule(rule) => {
+                self.collect_expr(&rule.name, semantic);
+                if let Some(sort_order) = &rule.sort_order {
+                    self.collect_expr(sort_order, semantic);
+                }
+                for setting in &rule.settings {
+                    self.collect_expr(setting, semantic);
+                }
+                if let Some(event) = &rule.event {
+                    self.collect_expr(event, semantic);
+                }
+                for condition in &rule.conditions {
+                    self.collect_expr(&condition.expr, semantic);
+                }
+                self.collect_stmt(&rule.body, semantic);
+            }
+            ItemKind::VanillaRule(rule) => {
+                if let Some(name) = &rule.name {
+                    self.collect_expr(name, semantic);
+                }
+            }
+            ItemKind::Var(var) => self.collect_var(var, semantic),
+            ItemKind::Function(function) => self.collect_function(function, semantic),
+            ItemKind::TypeDecl(decl) => {
+                for member in &decl.members {
+                    match &member.kind {
+                        ast::MemberDeclKind::Field(var) => self.collect_var(var, semantic),
+                        ast::MemberDeclKind::Method(function) => {
+                            self.collect_function(function, semantic)
+                        }
+                        ast::MemberDeclKind::Constructor(constructor) => {
+                            if let Some(subroutine) = &constructor.subroutine {
+                                self.collect_expr(subroutine, semantic);
+                            }
+                            self.collect_block(&constructor.body, semantic);
+                        }
+                        ast::MemberDeclKind::EnumMember(member) => {
+                            if let Some(discriminant) = &member.discriminant {
+                                self.collect_expr(discriminant, semantic);
+                            }
+                        }
+                    }
+                }
+            }
+            ItemKind::Import(import) => self.collect_expr(&import.path, semantic),
+            ItemKind::VarReservation(reservation) => {
+                for name in &reservation.names {
+                    self.collect_expr(name, semantic);
+                }
+            }
+            ItemKind::Hook { target, value } => {
+                self.collect_expr(target, semantic);
+                self.collect_expr(value, semantic);
+            }
+            ItemKind::VanillaBlock(_) | ItemKind::TypeAlias(_) | ItemKind::Error { .. } => {}
+        }
+    }
+
+    fn collect_function(&mut self, function: &ast::FunctionDecl, semantic: &SemanticProgram) {
+        if let Some(subroutine) = &function.attrs.subroutine {
+            self.collect_expr(&subroutine.rule_name, semantic);
+        }
+        for param in &function.params {
+            if let Some(default) = &param.default {
+                self.collect_expr(default, semantic);
+            }
+        }
+        match &function.body {
+            FuncBody::Block(block) => self.collect_block(block, semantic),
+            FuncBody::Expr(expr) => self.collect_expr(expr, semantic),
+            FuncBody::None => {}
+        }
+    }
+
+    fn collect_var(&mut self, var: &ast::VarDecl, semantic: &SemanticProgram) {
+        if let Some(var_id) = &var.var_id {
+            self.collect_expr(var_id, semantic);
+        }
+        if let Some((_, init)) = &var.init {
+            self.collect_expr(init, semantic);
+        }
+    }
+
+    fn collect_block(&mut self, block: &ast::BlockStmt, semantic: &SemanticProgram) {
+        for stmt in &block.stmts {
+            self.collect_stmt(stmt, semantic);
+        }
+    }
+
+    fn collect_stmt(&mut self, stmt: &Stmt, semantic: &SemanticProgram) {
+        match &stmt.kind {
+            StmtKind::Block(block) => self.collect_block(block, semantic),
+            StmtKind::Var(var) => self.collect_var(var, semantic),
+            StmtKind::If { cond, then, els } => {
+                self.collect_expr(cond, semantic);
+                self.collect_stmt(then, semantic);
+                if let Some(els) = els {
+                    self.collect_stmt(els, semantic);
+                }
+            }
+            StmtKind::While { cond, body } => {
+                self.collect_expr(cond, semantic);
+                self.collect_stmt(body, semantic);
+            }
+            StmtKind::For(for_stmt) => {
+                if let Some(init) = &for_stmt.init {
+                    self.collect_stmt(init, semantic);
+                }
+                if let Some(cond) = &for_stmt.cond {
+                    self.collect_expr(cond, semantic);
+                }
+                if let Some(step) = &for_stmt.step {
+                    self.collect_stmt(step, semantic);
+                }
+                self.collect_stmt(&for_stmt.body, semantic);
+            }
+            StmtKind::Foreach {
+                collection, body, ..
+            } => {
+                self.collect_expr(collection, semantic);
+                self.collect_stmt(body, semantic);
+            }
+            StmtKind::Switch(switch) => {
+                self.collect_expr(&switch.scrutinee, semantic);
+                for arm in &switch.arms {
+                    if let Some(label) = &arm.label {
+                        self.collect_expr(label, semantic);
+                    }
+                    for stmt in &arm.stmts {
+                        self.collect_stmt(stmt, semantic);
+                    }
+                }
+            }
+            StmtKind::Return { value } => {
+                if let Some(value) = value {
+                    self.collect_expr(value, semantic);
+                }
+            }
+            StmtKind::Expr(expr) => self.collect_expr(expr, semantic),
+            StmtKind::Delete { target } => self.collect_expr(target, semantic),
+            StmtKind::Hook { target, value } => {
+                self.collect_expr(target, semantic);
+                self.collect_expr(value, semantic);
+            }
+            StmtKind::Break | StmtKind::Continue | StmtKind::Error { .. } => {}
+        }
+    }
+
+    fn collect_expr(&mut self, expr: &Expr, semantic: &SemanticProgram) {
+        if let Some(Resolution::External(binding)) = semantic.resolution.get(&expr.id) {
+            if let Some((name, namespace)) = external_name(expr) {
+                self.bindings.insert(
+                    ExternalKey {
+                        span: expr.span,
+                        name,
+                        namespace,
+                    },
+                    binding.clone(),
+                );
+            }
+        }
+        match &expr.kind {
+            ExprKind::Member { base, .. } => self.collect_expr(base, semantic),
+            ExprKind::Index { base, index } => {
+                self.collect_expr(base, semantic);
+                self.collect_expr(index, semantic);
+            }
+            ExprKind::Call(call) => {
+                self.collect_expr(&call.callee, semantic);
+                for arg in &call.args {
+                    self.collect_expr(&arg.value, semantic);
+                }
+            }
+            ExprKind::Unary { operand, .. }
+            | ExprKind::Cast { expr: operand, .. }
+            | ExprKind::Async { call: operand, .. }
+            | ExprKind::Postfix { operand, .. } => self.collect_expr(operand, semantic),
+            ExprKind::Binary { lhs, rhs, .. }
+            | ExprKind::Assign {
+                target: lhs,
+                value: rhs,
+                ..
+            } => {
+                self.collect_expr(lhs, semantic);
+                self.collect_expr(rhs, semantic);
+            }
+            ExprKind::Ternary { cond, then, els } => {
+                self.collect_expr(cond, semantic);
+                self.collect_expr(then, semantic);
+                self.collect_expr(els, semantic);
+            }
+            ExprKind::New { args, .. } => {
+                for arg in args {
+                    self.collect_expr(&arg.value, semantic);
+                }
+            }
+            ExprKind::ArrayLit { elems } => {
+                for elem in elems {
+                    self.collect_expr(elem, semantic);
+                }
+            }
+            ExprKind::StructLit(struct_lit) => {
+                for field in &struct_lit.fields {
+                    self.collect_expr(&field.value, semantic);
+                }
+                if let Some(base) = &struct_lit.base {
+                    self.collect_expr(base, semantic);
+                }
+                if let Some(value) = &struct_lit.single_value {
+                    self.collect_expr(value, semantic);
+                }
+            }
+            ExprKind::Lambda(lambda) => match &lambda.body {
+                ast::LambdaBody::Expr(expr) => self.collect_expr(expr, semantic),
+                ast::LambdaBody::Block(block) => self.collect_block(block, semantic),
+            },
+            ExprKind::StrInterp { args, .. } | ExprKind::Interp { args, .. } => {
+                for arg in args {
+                    self.collect_expr(arg, semantic);
+                }
+            }
+            ExprKind::Is { operand, .. } => self.collect_expr(operand, semantic),
+            ExprKind::JsonImport { path, .. } => self.collect_expr(path, semantic),
+            ExprKind::VanillaTarget { index, .. } => {
+                if let Some(index) = index {
+                    self.collect_expr(index, semantic);
+                }
+            }
+            ExprKind::Number(_)
+            | ExprKind::Str(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Null
+            | ExprKind::Ident(_)
+            | ExprKind::This
+            | ExprKind::Root
+            | ExprKind::Error { .. } => {}
+        }
+    }
+}
+
+fn external_name(expr: &Expr) -> Option<(String, Vec<String>)> {
+    match &expr.kind {
+        ExprKind::Ident(ident) => Some((ident.name.clone(), Vec::new())),
+        ExprKind::Member { base, name } => Some((name.name.clone(), member_namespace(base))),
+        _ => None,
+    }
+}
+
+fn member_namespace(base: &Expr) -> Vec<String> {
+    match &base.kind {
+        ExprKind::Ident(ident) => vec![ident.name.clone()],
+        ExprKind::Member { base, name } => {
+            let mut namespace = member_namespace(base);
+            namespace.push(name.name.clone());
+            namespace
+        }
+        _ => Vec::new(),
+    }
+}
+
 struct Lowerer<'a> {
     hir: &'a HirProgram,
     sources: &'a SourceMap,
+    context: Option<&'a WorkshopLoweringContext>,
     out: wir::Program,
     global_vars: HashMap<HirVarId, wir::GlobalVarId>,
     player_vars: HashMap<HirVarId, wir::PlayerVarId>,
@@ -63,7 +377,11 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    fn new(hir: &'a HirProgram, sources: &'a SourceMap) -> Self {
+    fn new(
+        hir: &'a HirProgram,
+        sources: &'a SourceMap,
+        context: Option<&'a WorkshopLoweringContext>,
+    ) -> Self {
         let mut out = wir::Program::default();
         for source in sources.files() {
             out.files
@@ -72,6 +390,7 @@ impl<'a> Lowerer<'a> {
         Self {
             hir,
             sources,
+            context,
             out,
             global_vars: HashMap::new(),
             player_vars: HashMap::new(),
@@ -334,11 +653,17 @@ impl<'a> Lowerer<'a> {
 
     fn lower_event(&mut self, id: HirExprId) -> Option<wir::Event> {
         let expr = self.hir.expr(id)?.clone();
-        let HirExprKind::External {
-            binding: Some(ExternalBinding::Event(info)),
-            ..
-        } = expr.kind
-        else {
+        let HirExprKind::External { name, namespace } = expr.kind else {
+            self.unsupported(
+                expr.span,
+                "rule event is not a canonical Workshop event binding",
+            );
+            return None;
+        };
+        let Some(binding) = self.external_binding(expr.span, &name, &namespace) else {
+            return None;
+        };
+        let ExternalBinding::Event(info) = binding else {
             self.unsupported(
                 expr.span,
                 "rule event is not a canonical Workshop event binding",
@@ -523,9 +848,21 @@ impl<'a> Lowerer<'a> {
             }
             HirExprKind::Call { target, args } => match target {
                 CallTarget::External {
-                    binding: Some(ExternalBinding::Action(info)),
-                    ..
+                    name,
+                    namespace,
+                    span: callee_span,
                 } => {
+                    let Some(binding) = self.external_binding(callee_span, &name, &namespace)
+                    else {
+                        return Vec::new();
+                    };
+                    let ExternalBinding::Action(info) = binding else {
+                        self.unsupported(
+                            expr.span,
+                            "expression statement is not a canonical Workshop action",
+                        );
+                        return Vec::new();
+                    };
                     let Ok(args) = self.lower_args(&args) else {
                         return Vec::new();
                     };
@@ -706,17 +1043,26 @@ impl<'a> Lowerer<'a> {
                     return Err(());
                 }
             }
-            HirExprKind::External {
-                binding: Some(binding),
-                ..
-            } => self.value_from_binding(binding, Vec::new(), expr.span)?,
+            HirExprKind::External { name, namespace } => {
+                let Some(binding) = self.external_binding(expr.span, &name, &namespace) else {
+                    return Err(());
+                };
+                self.value_from_binding(binding, Vec::new(), expr.span)?
+            }
             HirExprKind::Call { target, args } => {
                 let args = self.lower_args(&args)?;
                 match target {
                     CallTarget::External {
-                        binding: Some(binding),
-                        ..
-                    } => self.value_from_binding(binding, args, expr.span)?,
+                        name,
+                        namespace,
+                        span: callee_span,
+                    } => {
+                        let Some(binding) = self.external_binding(callee_span, &name, &namespace)
+                        else {
+                            return Err(());
+                        };
+                        self.value_from_binding(binding, args, expr.span)?
+                    }
                     CallTarget::BuiltinArrayMethod { member, base } => {
                         let mut all = vec![self.lower_value(base)?];
                         all.extend(args);
@@ -815,8 +1161,7 @@ impl<'a> Lowerer<'a> {
             | HirExprKind::Async { .. }
             | HirExprKind::This { .. }
             | HirExprKind::Postfix { .. }
-            | HirExprKind::Error
-            | HirExprKind::External { binding: None, .. } => {
+            | HirExprKind::Error => {
                 self.unsupported(
                     expr.span,
                     "expression has no core canonical Workshop value lowering",
@@ -863,6 +1208,45 @@ impl<'a> Lowerer<'a> {
                 Err(())
             }
         }
+    }
+
+    fn external_binding(
+        &mut self,
+        span: Span,
+        name: &str,
+        namespace: &[String],
+    ) -> Option<ExternalBinding> {
+        let Some(context) = self.context else {
+            self.unsupported(
+                span,
+                format!(
+                    "external Workshop binding for '{}{}' requires semantic lowering context",
+                    if namespace.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}.", namespace.join("."))
+                    },
+                    name
+                ),
+            );
+            return None;
+        };
+        let Some(binding) = context.lookup(span, name, namespace) else {
+            self.unsupported(
+                span,
+                format!(
+                    "external Workshop binding for '{}{}' is unavailable in semantic resolution",
+                    if namespace.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{}.", namespace.join("."))
+                    },
+                    name
+                ),
+            );
+            return None;
+        };
+        Some(binding)
     }
 
     fn validate_output(&mut self) {
