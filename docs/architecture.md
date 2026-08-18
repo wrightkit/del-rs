@@ -156,6 +156,7 @@ Cargo.toml                 # package del-rs; [lib] name = "del_rs"; [[bin]] name
 src/
   lib.rs                   # crate root: module declarations + public re-exports
   span.rs                  # FileId, Span, LineCol, SourceFile, SourceMap, line/col mapping
+  workshop_source.rs       # DEL source/provenance -> workshop-rs source arena/span bridge
   diagnostics.rs           # Diagnostic, Severity, Phase, RelatedSpan, code registry
   syntax/
     mod.rs                 # syntax facade: parse_source(), ParseOutput
@@ -239,6 +240,21 @@ impl SourceMap {
   conversion concern of the consumer, not this crate.
 - `FileId` is stable across the whole pipeline (parse → semantic → HIR), so spans stay
   comparable everywhere.
+
+### 6.1 Source/provenance bridge
+
+`workshop_source.rs` is a DEL-owned, source-only bridge for the integration boundary. Its
+`WorkshopSourceBridge::from_source_map` inserts each DEL `SourceMap` file into a
+`workshop_rs::arena::Arena<workshop_rs::source::SourceFile>` in source-map order and retains the
+typed DEL `FileId` → Workshop `SourceFileId` mapping. `position` and `span` convert DEL's
+half-open byte offsets to workshop-rs's 1-based `Position` and typed `Span`.
+
+The bridge checks file existence, byte bounds, UTF-8 scalar boundaries, reversed spans, and
+non-UTF-8 paths rather than clamping or lossy-converting provenance. The Workshop source entries
+carry paths only; DEL source text remains owned by the DEL `SourceMap`. This module has no HIR,
+lowering, backend encoding, provider-specific state, or catalog data, so del-rs #36 can reuse or
+extend it later. HIR-to-WIR lowering remains follow-up del-rs #30 work, while the canonical
+WIR/catalog contract remains owned by workshop-rs.
 
 ## 7. Lexer
 

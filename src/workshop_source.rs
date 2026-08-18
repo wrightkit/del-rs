@@ -1,94 +1,124 @@
-//! Source provenance bridge for the DEL -> Workshop integration boundary.
+//! DEL-owned source/provenance bridge for the `workshop-rs` boundary.
 //!
-//! This module converts DEL source identity and byte spans into the canonical
-//! `workshop-rs` source model. It does not lower HIR or define Workshop
-//! semantics; those responsibilities remain in the later lowering layer and
-//! in `workshop-rs`, respectively.
+//! This module maps the frontend's byte-offset source model into the
+//! canonical Workshop source model. It deliberately contains no HIR,
+//! lowering, backend encoding, or catalog state.
 
-use crate::span::{SourceMap, Span};
-use workshop_rs::ids::Id;
-use workshop_rs::source::{Position, SourceFile, Span as WorkshopSpan};
+use workshop_rs::arena::Arena;
+use workshop_rs::source::{FileId as WorkshopFileId, Position, SourceFile, Span as WorkshopSpan};
 
-/// Deterministic mapping from DEL source files to Workshop source files.
-#[derive(Debug, Clone)]
-pub struct WorkshopSourceMap {
-    files: Vec<SourceFile>,
+use crate::span::{FileId, SourceMap, Span};
+
+/// Errors raised when a DEL source location cannot be represented exactly in
+/// the Workshop source model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceBridgeError {
+    /// The DEL file ID does not belong to the source map used to build this
+    /// bridge.
+    UnknownFile(FileId),
+    /// A source path cannot be represented by workshop-rs's UTF-8 path field.
+    NonUtf8Path(FileId),
+    /// The byte offset is outside the source file.
+    OffsetOutOfBounds { file: FileId, offset: u32, len: u32 },
+    /// The byte offset splits a UTF-8 scalar value.
+    OffsetNotCharBoundary { file: FileId, offset: u32 },
+    /// The DEL span is reversed. Both source models use half-open spans, but
+    /// only workshop-rs validates their ordering.
+    ReversedSpan(Span),
 }
 
-impl WorkshopSourceMap {
-    /// Copy the DEL source registry in its stable file order.
-    pub fn from_source_map(sources: &SourceMap) -> Self {
-        Self {
-            files: sources
-                .files()
-                .map(|source| SourceFile::new(source.name.display().to_string()))
-                .collect(),
+/// A reusable mapping from DEL source provenance to workshop-rs source data.
+///
+/// The Workshop files are inserted in the same order as the DEL `SourceMap`.
+/// The bridge retains a clone of the source map so byte offsets can be checked
+/// before conversion; no source text is copied into workshop-rs's file entries.
+#[derive(Clone)]
+pub struct WorkshopSourceBridge {
+    source_map: SourceMap,
+    files: Arena<SourceFile>,
+    del_to_workshop: Vec<WorkshopFileId>,
+}
+
+impl WorkshopSourceBridge {
+    /// Build Workshop source-file entries and a stable DEL-file-ID mapping.
+    pub fn from_source_map(sources: &SourceMap) -> Result<Self, SourceBridgeError> {
+        let mut files = Arena::new();
+        let mut del_to_workshop = Vec::new();
+
+        for source in sources.files() {
+            let Some(path) = source.name.to_str() else {
+                return Err(SourceBridgeError::NonUtf8Path(source.id));
+            };
+            let workshop_file = files.push(SourceFile::new(path));
+            let index = source.id.0 as usize;
+            if del_to_workshop.len() <= index {
+                del_to_workshop.resize(index + 1, workshop_file);
+            }
+            del_to_workshop[index] = workshop_file;
         }
+
+        Ok(Self {
+            source_map: sources.clone(),
+            files,
+            del_to_workshop,
+        })
     }
 
-    /// Workshop source files in the same order as the DEL source registry.
-    pub fn files(&self) -> &[SourceFile] {
+    /// The workshop-rs source-file arena, in DEL source-map order.
+    pub fn files(&self) -> &Arena<SourceFile> {
         &self.files
     }
 
-    /// Convert a DEL byte span into a validated 1-based Workshop span.
-    pub fn span(&self, sources: &SourceMap, span: Span) -> Option<WorkshopSpan> {
-        let file = sources.get(span.file);
-        if span.end < span.start || span.end > file.text.len() as u32 {
-            return None;
-        }
-        let file_id = Id::from_index(span.file.0 as usize);
-        if file_id.index() >= self.files.len() {
-            return None;
-        }
-        Some(WorkshopSpan::new(
-            file_id,
-            position(file.line_col(span.start)),
-            position(file.line_col(span.end)),
-        ))
-    }
-}
-
-fn position(line_col: crate::span::LineCol) -> Position {
-    Position::new(line_col.line, line_col.col)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn preserves_file_order_and_exact_one_based_unicode_spans() {
-        let mut sources = SourceMap::new();
-        let first = sources.add_file(PathBuf::from("main.del"), "éx\nrule".into());
-        let second = sources.add_file(PathBuf::from("lib.del"), "ok".into());
-        let bridge = WorkshopSourceMap::from_source_map(&sources);
-
-        assert_eq!(bridge.files()[0].path, "main.del");
-        assert_eq!(bridge.files()[1].path, "lib.del");
-
-        let converted = bridge
-            .span(&sources, Span::new(first, 0, 3))
-            .expect("valid source span");
-        assert_eq!(converted.file.index(), first.0 as usize);
-        assert_eq!(converted.start, Position::new(1, 1));
-        assert_eq!(converted.end, Position::new(1, 3));
-
-        let second_span = bridge
-            .span(&sources, Span::new(second, 0, 2))
-            .expect("second source span");
-        assert_eq!(second_span.file.index(), second.0 as usize);
-        assert_eq!(second_span.start, Position::new(1, 1));
-        assert_eq!(second_span.end, Position::new(1, 3));
+    /// Resolve a DEL `FileId` to the corresponding typed Workshop file ID.
+    pub fn workshop_file_id(&self, file: FileId) -> Option<WorkshopFileId> {
+        self.del_to_workshop.get(file.0 as usize).copied()
     }
 
-    #[test]
-    fn rejects_out_of_range_spans() {
-        let mut sources = SourceMap::new();
-        let file = sources.add_file(PathBuf::from("main.del"), "ok".into());
-        let bridge = WorkshopSourceMap::from_source_map(&sources);
-        assert!(bridge.span(&sources, Span::new(file, 1, 3)).is_none());
-        assert!(bridge.span(&sources, Span::new(file, 2, 1)).is_none());
+    /// Convert a DEL byte offset to a 1-based Workshop position.
+    pub fn position(&self, file: FileId, offset: u32) -> Result<Position, SourceBridgeError> {
+        let source = self.source_file(file)?;
+        self.validate_offset(file, source.text.len(), offset)?;
+        let line_col = source.line_col(offset);
+        Ok(Position::new(line_col.line, line_col.col))
+    }
+
+    /// Convert a DEL half-open byte span to a typed Workshop source span.
+    pub fn span(&self, span: Span) -> Result<WorkshopSpan, SourceBridgeError> {
+        if span.start > span.end {
+            return Err(SourceBridgeError::ReversedSpan(span));
+        }
+        let file = self
+            .workshop_file_id(span.file)
+            .ok_or(SourceBridgeError::UnknownFile(span.file))?;
+        let start = self.position(span.file, span.start)?;
+        let end = self.position(span.file, span.end)?;
+        Ok(WorkshopSpan::new(file, start, end))
+    }
+
+    fn source_file(&self, file: FileId) -> Result<&crate::span::SourceFile, SourceBridgeError> {
+        self.source_map
+            .files()
+            .find(|source| source.id == file)
+            .ok_or(SourceBridgeError::UnknownFile(file))
+    }
+
+    fn validate_offset(
+        &self,
+        file: FileId,
+        len: usize,
+        offset: u32,
+    ) -> Result<(), SourceBridgeError> {
+        let offset_usize = offset as usize;
+        if offset_usize > len {
+            return Err(SourceBridgeError::OffsetOutOfBounds {
+                file,
+                offset,
+                len: len.min(u32::MAX as usize) as u32,
+            });
+        }
+        if !self.source_file(file)?.text.is_char_boundary(offset_usize) {
+            return Err(SourceBridgeError::OffsetNotCharBoundary { file, offset });
+        }
+        Ok(())
     }
 }

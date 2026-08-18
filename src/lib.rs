@@ -19,5 +19,6 @@ pub mod workshop_source;
 
 pub use diagnostics::{Diagnostic, Phase, RelatedSpan, Severity};
 pub use span::{FileId, LineCol, SourceFile, SourceMap, Span};
+pub use workshop_source::{SourceBridgeError, WorkshopSourceBridge};
 pub use syntax::ast::*;
 pub use syntax::token::{StrForm, Token, TokenKind};
