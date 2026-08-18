@@ -24,6 +24,8 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
   governing constraints, design decisions (D1–D6), module layout, source
   model, lexer/parser/project/semantic/HIR/oracle design, public API, CLI
   contract, and test strategy. This is the authoritative design record.
+- [`cli.md`](cli.md) — task-oriented command classification, migration aliases,
+  exit codes, presentation policy, GitHub annotations, and static completion.
 
 ### Compatibility
 
@@ -34,7 +36,7 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
   corpus/differential methodology, and the pinned upstream oracle.
 - [`support-matrix.toml`](support-matrix.toml) — the machine-readable declared
   support surface (128 entries), validated mechanically on every CI run
-  (`tests/matrix.rs` and `del-rs matrix --check`). **Source of truth** for
+  (`tests/matrix.rs` and `del-rs support --check`). **Source of truth** for
   what is supported.
 - [`inventory.md`](inventory.md) — the declared language/compiler surface
   inventoried from the pinned upstream with per-feature evidence
@@ -56,9 +58,9 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
 
 ### Interfaces
 
-- CLI contract: commands, flags, exit codes, and the `--json` envelope are
-  documented in [`architecture.md`](architecture.md) §18; the binary prints
-  its own help via `del-rs --help`.
+- CLI contract: task-oriented commands, flags, exit codes, output boundaries,
+  migration aliases, and static completion are documented in [`cli.md`](cli.md);
+  the binary prints its own structured help via `del-rs --help`.
 - Library API: the stable surface (`parse`, project loading, semantic/HIR
   queries, oracle, matrix) is documented in [`architecture.md`](architecture.md)
   §17 and exercised in the `tests/` integration suites.
@@ -78,7 +80,7 @@ GitHub issues/PRs            implementation scope, sequencing, acceptance (histo
   `tests/advanced.rs` (advanced semantics), `tests/hir.rs` (HIR lowering +
   validation + oracle), `tests/corpus.rs` (corpus harness + evidence report +
   project fixtures), `tests/matrix.rs` (matrix mechanical validation),
-  `tests/cli.rs` (CLI smoke tests).
+  `tests/cli.rs` (CLI black-box contracts).
 - Corpus fixtures live under `tests/corpus/` with `// source` / `// license`
   / `// expect` headers. Evidence, gap, and matrix-link directives are
   documented in [`workshop-conformance.md`](workshop-conformance.md).

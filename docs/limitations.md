@@ -77,7 +77,7 @@ plus a short list of evidence-backed approximation areas.
   `tests/corpus/`, asserts each fixture's `// expect:` outcome, and fails on
   missing `// source:`/`// license:` provenance headers. This is the standing
   accept/reject record.
-- `tests/matrix.rs` and `del-rs matrix --check` mechanically validate
+- `tests/matrix.rs` and `del-rs support --check` mechanically validate
   `support-matrix.toml` (schema, ids, states, evidence paths, rationale
   notes) on every CI run.
 - Differential comparison against a pinned upstream build is the defined

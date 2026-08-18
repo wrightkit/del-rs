@@ -24,7 +24,7 @@ boundary is documented in the [architecture reference](docs/architecture.md).
   and other consumers.
 - **Compatibility evidence:** a machine-checked support matrix, corpus fixtures,
   provenance records, a bounded semantic oracle, and an evidence report
-  (`del-rs compatibility --json`).
+  (`del-rs maintainer compatibility --json`).
 
 ## .del / .ostw compatibility
 
@@ -76,25 +76,31 @@ There are no prebuilt distributions yet. Install from source with
 ## Quick start
 
 ```text
-del-rs parse <file> [--json]
 del-rs check <file-or-dir> [--json]
-del-rs hir <file-or-dir> [--json]
 del-rs inspect <file> <line>:<col> [--json]
-del-rs matrix [--check] [--json]
-del-rs compatibility [--json]
+del-rs support [--check] [--json]
+del-rs dev parse <file> [--json]
+del-rs dev hir <file-or-dir> [--json]
+del-rs completion <bash|zsh|fish|powershell>
+del-rs maintainer compatibility [--json]
 ```
 
 Exit codes are `0` for success, `1` for diagnosed source errors, `2` for usage
-errors, `3` for internal errors, and `4` for I/O errors. With `--json`, stdout
-contains one stable JSON document while human-readable diagnostics go to
+errors, `3` for internal CLI failures, and `4` for I/O errors. `inspect` is a
+best-effort query and remains exit `0` when it returns a result alongside source
+diagnostics. With `--json`, stdout contains one machine-readable JSON document
+without ANSI or GitHub workflow decoration; human-readable diagnostics go to
 stderr.
 
 Example:
 
 ```sh
 del-rs check tests/corpus/highlevel/enum-basic.del
-del-rs matrix --check
+del-rs support --check
 ```
+
+The command classification, compatibility aliases, presentation policy, and
+completion generation are documented in [`docs/cli.md`](docs/cli.md).
 
 ### Library usage
 

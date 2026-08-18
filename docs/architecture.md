@@ -103,7 +103,7 @@ Rules:
   least one evidence path; `lowering-dependent` and `out-of-scope` features carry a rationale
   in `notes`; `workshop-lowering` features never claim a supported state.
 - The same validation is exposed at runtime via `del_rs::matrix::load_and_validate()` and the
-  `del-rs matrix --check` CLI command; the matrix is embedded with `include_str!` so the CLI
+  `del-rs support --check` CLI command; the matrix is embedded with `include_str!` so the CLI
   works from any directory.
 - Current state: the frontend surface (`syntax`, `semantic`, `runtime-semantics`) is fully at
   `frontend-supported`/`semantic-supported`; the remaining `planned` features are explicitly
@@ -179,7 +179,7 @@ src/
     validate.rs            # HIR invariant checks (HI codes)
     oracle.rs              # semantic oracle interpreter (OR codes)
   api.rs                   # public library API facade (all phases + queries)
-  bin/del-rs.rs            # CLI (parse/check/inspect/hir/matrix)
+  bin/del-rs.rs            # CLI command model and task-oriented surfaces
 tests/
   parse.rs                 # lexer/parser/AST unit-ish integration tests
   semantic.rs              # symbol/type/resolution fixtures
@@ -187,7 +187,7 @@ tests/
   hir.rs                   # lowering + validation + oracle behavior tests
   corpus.rs                # corpus harness + project/import fixtures (walks tests/corpus/)
   matrix.rs                # support-matrix validation test
-  cli.rs                   # CLI smoke tests (exit codes, --json schema)
+  cli.rs                   # CLI black-box contracts (surface, output, exits)
   corpus/                  # fixture tree: .del/.ostw files with // source/ // license/ // expect/ headers
 docs/                      # architecture.md (this file), support-matrix.toml, + #2/#3 docs
 ```
@@ -1520,28 +1520,16 @@ serializes diagnostics only (AST/HIR are programmatic, not wire formats).
 
 ## 18. CLI
 
-`del-rs <command> [args]` (binary `del-rs`; `--version`, `--help`).
+The CLI is driven by one structured `clap` command model for parsing, help,
+validation, and static Bash/Zsh/Fish/PowerShell completion. The current
+task-oriented command classification, migration aliases, presentation policy,
+GitHub annotations, JSON boundary, and exit-code contract live in
+[`cli.md`](cli.md). The binary remains standalone and uses `NoopProvider`; it
+does not depend on Wright or a shared CLI crate.
 
-| Command | Args | Behavior |
-|---|---|---|
-| `parse <file>` | `--json` | Lex + parse; print diagnostics (human or JSON); print AST/token summary |
-| `check <file-or-dir>` | `--json` | Full pipeline (parse → project → semantic → HIR → validate); aggregated diagnostics; summary of phases run |
-| `hir <file-or-dir>` | `--json` | Lower + validate; print HIR summary (funcs/rules/classes/enums/vars/exprs); JSON reports validation diagnostics |
-| `inspect <file> <line>:<col>` | `--json` | Query symbol/type/resolution at position (via `symbol_at`/`type_at`/`resolution_at`) |
-| `matrix` | `--json`, `--check` | Print/validate the embedded support matrix; `--check` exits 1 on invalid matrix |
-| `--version`, `--help` | | Standard |
-
-Exit codes (documented, stable, tested by `tests/cli.rs`):
-
-| Code | Meaning |
-|---|---|
-| 0 | success; no `Error`-severity diagnostics (warnings/info allowed) |
-| 1 | errors found (any phase) or `matrix --check` failed |
-| 2 | usage error (unknown command/flag, bad `line:col`) |
-| 3 | internal error (unexpected panic is caught, message printed, code 3) |
-| 4 | I/O error (missing file, unreadable directory) |
-
-`--json` prints exactly one JSON document to stdout: `{ "command": ..., "phase": ..., "diagnostics": [...], "summary": {...} }` with stable field names; human output goes to stderr for diagnostics and stdout for results. The CLI never requires a Workshop backend; `--provider none` (the `NoopProvider`) is the only provider in this crate.
+`tests/cli.rs` is the black-box evidence for command migration, completion,
+environment isolation, machine-output purity, workflow escaping, diagnostics,
+and exit codes.
 
 ## 19. Test strategy
 
@@ -1604,7 +1592,7 @@ Semantics of `expect`:
   `source` + `license` are present, and validates every optional `// matrix:` id against the
   support matrix. Pinned source URLs and project paths provide the legacy classifications when
   `// evidence:` is omitted.
-- `del-rs compatibility --json` emits report schema 1 with separate `matched`, `known-gaps`,
+- `del-rs maintainer compatibility --json` emits report schema 1 with separate `matched`, `known-gaps`,
   `unsupported`, `unexpected-regressions`, and `inconclusive` counts plus per-fixture results.
   An `unknown` fixture must declare an explicit non-passing status, so current native agreement
   cannot silently turn a known gap into compatibility.
