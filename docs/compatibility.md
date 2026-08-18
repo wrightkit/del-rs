@@ -89,10 +89,10 @@ feature inventory ([`inventory.md`](inventory.md)), and — where reproducible �
 the pinned upstream compiler.
 
 - **Fixture headers.** Every `.del`/`.ostw` corpus fixture carries
-  `// source: <url@commit>`, `// license: MIT`, and `// expect: <outcome>`
+  `// source: <url@commit>`, `// license: <license>`, and `// expect: <outcome>`
   directives. The corpus harness (`tests/corpus.rs`, run on every CI run)
-  fails on missing source/license directives and asserts each fixture's
-  declared outcome.
+  fails on missing or empty source/license directives and asserts each
+  fixture's declared outcome.
 - **Accept/reject agreement.** The primary compatibility record is
   accept/reject and diagnostic-presence agreement per fixture, expressed as
   `// expect:` outcomes — never output-text identity.
@@ -109,6 +109,12 @@ the pinned upstream compiler.
   behavior, known gaps, unsupported cases, unexpected regressions, and
   inconclusive evidence. Unknown expectations require an explicit non-passing
   status; they are never promoted to compatibility by native agreement.
+
+`pinned-oracle` fixtures must use the pinned OSTW compiler repository and
+commit. `real-project` fixtures must use their own immutable repository,
+revision, path, and license provenance; they cannot reuse the pinned upstream
+compiler identity. Compiler-shipped Examples and Modules remain project-level
+`pinned-oracle` fixtures until an independent real project is added.
 
 ## Pinned upstream oracle and provenance boundary
 
