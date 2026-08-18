@@ -6,7 +6,9 @@ Workshop-observable expectations belong to `workshop-rs` (issue #10).
 
 ## Evidence report
 
-`del-rs compatibility --json` runs the source corpus and emits report schema 1.
+`del-rs maintainer compatibility --json` runs the source corpus and emits report
+schema 1. The legacy top-level `compatibility` alias remains accepted for CI
+scripts.
 Each fixture has an independent evidence classification:
 
 | Evidence | Meaning |
