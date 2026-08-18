@@ -5,14 +5,14 @@ support boundary of the `del-rs` frontend: what is deliberately not
 implemented, and why. The authoritative declared surface is
 [`support-matrix.toml`](support-matrix.toml); state meanings are defined in
 [`compatibility.md`](compatibility.md). Capabilities are classified as
-**lowering-dependent** (concrete Workshop encoding owned by the `workshop-rs`
-integration, issue #8) or **intentionally unsupported** (editor-only or
-outside the language contract), plus a short list of evidence-backed
-approximation areas.
+**lowering-dependent** (concrete Workshop encoding is follow-up del-rs #30
+work; the canonical WIR/catalog contract remains owned by `workshop-rs`) or
+**intentionally unsupported** (editor-only or outside the language contract),
+plus a short list of evidence-backed approximation areas.
 
-## Lowering-dependent (owned by #8 / workshop-rs)
+## Lowering-dependent (del-rs #30 / workshop-rs canonical contract boundary)
 
-- Concrete Workshop emission: actions, values, events, variable slots,
+- Concrete Workshop emission (follow-up del-rs #30): actions, values, events, variable slots,
   helper rules, dispatch tables, recursion stacks, reference layouts,
   optimizer choices. The typed HIR expresses intent only
   (`architecture.md` §15).

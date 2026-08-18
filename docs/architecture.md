@@ -22,7 +22,8 @@ surface), `provenance.md` (pinned upstream oracle), `syntax-notes.md` (parser re
 
 1. **Single crate at repo root.** Package `del-rs`, library `del_rs`, binary `del-rs`
    (`src/bin/del-rs.rs`). No workspace members. Dependencies: `serde`, `serde_json`, `toml`
-   (diagnostics JSON, `ds.toml`/manifests/matrix). Nothing else; no `workshop-rs` anywhere.
+   (diagnostics JSON, `ds.toml`/manifests/matrix), and the released registry
+   `workshop-rs 0.1.1` catalog core.
 2. **Backend neutrality.** The frontend owns syntax, semantic analysis, diagnostics, provenance,
    and the typed HIR. It must never own canonical Workshop catalog data, WIR, localization, or
    emitter logic. Workshop-facing names bind through one narrow provider trait (§12).
@@ -80,7 +81,7 @@ name = "workshop-lowering.workshop-catalog"
 category = "workshop-lowering"
 state = "lowering-dependent"
 evidence = ["docs/inventory.md"]        # rationale in notes
-notes = "Owned by workshop-rs integration (#8); never modeled in HIR."
+notes = "#34 provides CatalogProvider and canonical catalog identity through workshop-rs 0.1.1; HIR-to-WIR lowering is follow-up del-rs #30 work, while the canonical WIR/catalog contract remains owned by workshop-rs."
 
 [[features]]
 id = "editor.codelens"
@@ -704,9 +705,9 @@ pub fn load_project(opts: ProjectOptions) -> Project;    // total; errors become
 
 The single seam through which Workshop-facing names enter the front end. del-rs owns the trait,
 the permissive default, and the source-language adapter; `CatalogProvider` reads canonical
-identities and metadata from the pinned `workshop-rs` catalog. No catalog data, enum tables,
-event tables, or builtin signatures are copied into del-rs. The adapter records
-`WORKSHOP_RS_REVISION` and exposes the catalog identity for reproducible diagnostics/tests.
+identities and metadata from the released registry `workshop-rs 0.1.1` catalog. No catalog data,
+enum tables, event tables, or builtin signatures are copied into del-rs. The provider exposes
+the catalog identity for reproducible diagnostics and tests.
 
 ```rust
 // semantic/provider.rs
@@ -739,7 +740,7 @@ pub enum ExternalBinding {
 
 pub struct ExternalValueInfo {
     pub canonical_id: String,
-    pub ty: ExternalType,                       // Known(category) | Unknown
+    pub ty: Option<ExternalCategory>,           // known category when declared
     pub signature: Option<ArgSignature>,        // param names + optionality, when known
 }
 pub struct ExternalActionInfo { pub canonical_id: String, pub params: Option<Vec<ExternalParam>> }
@@ -751,14 +752,8 @@ pub struct ExternalParam { pub name: String, pub optional: bool }
 #[derive(Clone, Copy, Debug)]
 pub enum ExternalCategory { Number, String, Bool, Vector, Entity, Color, EnumLike, Constant, AnyLike }
 
-pub struct ResolutionContext<'a> {
-    pub program: &'a SemanticProgram,
-    pub file: FileId,
-    pub scope: ScopeId,
-}
-
 pub trait WorkshopProvider: Send + Sync {
-    fn resolve(&self, query: &NameQuery, ctx: ResolutionContext<'_>) -> ExternalResolution;
+    fn resolve(&self, query: &NameQuery) -> ExternalResolution;
 }
 
 /// Permissive default: everything is NotFound (unresolved-but-legal).
@@ -766,8 +761,8 @@ pub struct NoopProvider;
 impl WorkshopProvider for NoopProvider { /* NotFound for all queries */ }
 ```
 
-**Semantic interaction contract** (this is the documented contract workshop-rs implements
-later):
+**Semantic interaction contract** (implemented by `del-rs`'s provider seam and the
+`workshop-rs 0.1.1` catalog API):
 
 1. Name resolution order (§13) tries user scopes first; only failures reach the provider.
 2. `NotFound` ⇒ the name is typed `Type::External(ExternalType::Unknown)` (or
@@ -1655,10 +1650,11 @@ the relevant sections above already reflect them. Highlights:
 ## 22. Durable decision record
 
 This document is the decision record for the implemented frontend. D1–D6 (§2) are the
-architecture-level decisions. When the workshop-rs integration (#8) begins, the provider
-contract (§12) and HIR boundary (§15) are the two seams to formalize in an ADR with
-workshop-rs; nothing in this document is contingent on those future decisions beyond the
-documented seams.
+architecture-level decisions. The #34 provider contract (§12) now consumes the released
+`workshop-rs 0.1.1` catalog through public APIs; HIR-to-WIR lowering at the HIR boundary
+(§15) is follow-up del-rs #30 work, while the canonical WIR/catalog contract remains owned
+by workshop-rs. Nothing in this document requires a private Workshop revision or duplicated
+canonical catalog semantics.
 
 ---
 

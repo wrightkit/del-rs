@@ -52,6 +52,28 @@ fn catalog_provider_resolves_enum_member_without_copying_catalog_data() {
 }
 
 #[test]
+fn catalog_provider_does_not_accept_undeclared_enum_spellings() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(&["Team"], "all", ExternalPosition::Value, 0));
+    assert!(matches!(result, ExternalResolution::NotFound));
+}
+
+#[test]
+fn catalog_provider_maps_del_enum_spelling_to_catalog_identity() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    let result = provider.resolve(&query(
+        &["Button"],
+        "PrimaryFire",
+        ExternalPosition::Value,
+        0,
+    ));
+    let ExternalResolution::Known(ExternalBinding::Value(value)) = result else {
+        panic!("expected catalog-backed enum binding");
+    };
+    assert_eq!(value.canonical_id, "Button.PRIMARY_FIRE");
+}
+
+#[test]
 fn catalog_provider_rejects_excess_arguments_and_exposes_catalog_identity() {
     let provider = CatalogProvider::new().expect("built-in catalog");
     let result = provider.resolve(&query(&[], "Wait", ExternalPosition::Value, 3));

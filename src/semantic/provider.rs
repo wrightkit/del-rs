@@ -209,28 +209,18 @@ impl CatalogProvider {
 
     fn resolve_enum_member(&self, namespace: &[String], name: &str) -> Option<(String, String)> {
         let domain = namespace.first()?;
-        let canonical_name = lowercase_first(name);
+        if let Some(member) = self.catalog.resolve_enum_member(domain, &self.locale, name) {
+            return Some(member);
+        }
+
+        let canonical_name = del_enum_identifier(name)?;
         self.catalog
-            .enum_domain(domain)
-            .and_then(|_| {
-                self.catalog
-                    .resolve_enum_member(domain, &self.locale, name)
-                    .or_else(|| {
-                        self.catalog
-                            .resolve_enum_member(domain, &self.locale, &canonical_name)
-                    })
-            })
-            .or_else(|| {
-                self.catalog
-                    .enum_domain(domain)
-                    .and_then(|d| {
-                        d.members.iter().find(|m| {
-                            m.member == name
-                                || m.member == canonical_name
-                                || m.member.eq_ignore_ascii_case(name)
-                        })
-                    })
-                    .map(|m| (domain.to_string(), m.member.clone()))
+            .enum_domain(domain)?
+            .members
+            .iter()
+            .find_map(|member| {
+                (member.member == canonical_name)
+                    .then(|| (domain.to_string(), member.member.clone()))
             })
     }
 }
@@ -354,6 +344,34 @@ fn lowercase_first(value: &str) -> String {
         return String::new();
     };
     first.to_lowercase().collect::<String>() + chars.as_str()
+}
+
+// DEL enum members use PascalCase source spellings; canonical catalog member
+// IDs use uppercase snake case. The catalog remains the source of the ID.
+fn del_enum_identifier(value: &str) -> Option<String> {
+    let chars: Vec<char> = value.chars().collect();
+    if !chars.first()?.is_uppercase() {
+        return None;
+    }
+
+    let mut canonical = String::new();
+    for (index, &character) in chars.iter().enumerate() {
+        let previous = chars.get(index.wrapping_sub(1)).copied();
+        let next = chars.get(index + 1).copied();
+        let word_boundary = index > 0
+            && (character.is_uppercase()
+                && (previous.is_some_and(char::is_lowercase)
+                    || previous.is_some_and(char::is_numeric)
+                    || (previous.is_some_and(char::is_uppercase)
+                        && next.is_some_and(char::is_lowercase)))
+                || character.is_numeric() && previous.is_some_and(char::is_alphabetic)
+                || character.is_alphabetic() && previous.is_some_and(char::is_numeric));
+        if word_boundary {
+            canonical.push('_');
+        }
+        canonical.extend(character.to_uppercase());
+    }
+    Some(canonical)
 }
 
 fn parameters(entry: &CatalogEntry) -> Vec<ExternalParam> {
