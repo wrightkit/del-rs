@@ -38,6 +38,11 @@ plus a short list of evidence-backed approximation areas.
   references (including pure conversion wrappers); calls, random/dynamic
   values, and other unstable expressions fail closed with `HI018` until
   runtime materialization is owned by the appropriate runtime work.
+- #32 currently adapts DEL `ChaseVariableAtRate` and
+  `StopChasingVariable` spellings to canonical `workshop-rs` identities for
+  direct global and player-variable targets. `ModifyVariable`, member/struct
+  targets, and target-dependent operation encodings remain explicit `HI018`
+  gaps until their lowering semantics have independent evidence.
 
 ## Intentionally unsupported
 
