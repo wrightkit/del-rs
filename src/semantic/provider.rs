@@ -223,6 +223,15 @@ impl CatalogProvider {
                     .then(|| (domain.to_string(), member.member.clone()))
             })
     }
+
+    fn resolve_enum_type(&self, name: &str) -> Option<ExternalTypeInfo> {
+        let domain = self.catalog.enum_domain(name)?;
+        Some(ExternalTypeInfo {
+            canonical_id: domain.domain.clone(),
+            category: ExternalCategory::EnumLike,
+            constant: true,
+        })
+    }
 }
 
 impl WorkshopProvider for CatalogProvider {
@@ -242,6 +251,13 @@ impl WorkshopProvider for CatalogProvider {
             }));
         }
 
+        if query.position == ExternalPosition::Type {
+            return self
+                .resolve_enum_type(&query.name)
+                .map(ExternalBinding::Type)
+                .map_or(ExternalResolution::NotFound, ExternalResolution::Known);
+        }
+
         if !query.namespace.is_empty() {
             if let Some((domain, member)) = self.resolve_enum_member(&query.namespace, &query.name)
             {
@@ -254,9 +270,12 @@ impl WorkshopProvider for CatalogProvider {
         }
 
         let kinds: &[Kind] = match query.position {
+            // Type queries return from the enum-domain branch above; this
+            // arm only keeps the match exhaustive without consulting
+            // `Kind::Enum` entries.
+            ExternalPosition::Type => &[],
             ExternalPosition::Action => &[Kind::Action],
             ExternalPosition::Event => &[Kind::Event],
-            ExternalPosition::Type => &[Kind::Enum],
             // The existing DEL semantic contract presents both value and
             // action calls through the value position; preserve that seam by
             // asking the canonical catalog for both kinds in order.
@@ -291,11 +310,6 @@ impl WorkshopProvider for CatalogProvider {
                         }),
                     }))
                 }
-                Kind::Enum => ExternalResolution::Known(ExternalBinding::Type(ExternalTypeInfo {
-                    canonical_id: entry.id.clone(),
-                    category: ExternalCategory::EnumLike,
-                    constant: true,
-                })),
                 Kind::Event => {
                     ExternalResolution::Known(ExternalBinding::Event(ExternalEventInfo {
                         canonical_id: entry.id.clone(),

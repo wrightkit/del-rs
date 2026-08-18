@@ -45,7 +45,7 @@ evidence.[^upstream-reference]
 | Pattern matching & recursion | ✅ Supported | |
 | Embedded Workshop / lobby data | 🟡 Partial | Vanilla Workshop blocks parse; lobby-settings import not yet |
 | Workshop builtins | 🟡 Partial | `CatalogProvider` resolves the released canonical `workshop-rs` catalog; lowering is tracked separately |
-| DEL/OSTW → Workshop compilation | ⏳ Not yet | Requires follow-up del-rs #30 HIR → WIR lowering; #34 only establishes the catalog provider seam |
+| DEL/OSTW → Workshop compilation | 🟡 Partial | del-rs #30 owns the HIR → WIR lowering adapter; canonical WIR/catalog/emission contracts remain owned by workshop-rs, so end-to-end support is not claimed |
 | Workshop → DEL/OSTW reconstruction | ⏳ Not yet | |
 
 > [!NOTE]

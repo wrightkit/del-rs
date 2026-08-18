@@ -43,7 +43,7 @@ surface), `provenance.md` (pinned upstream oracle), `syntax-notes.md` (parser re
 | D1 | **Direct typed AST with trivia retention; no separate CST tree.** The parser consumes a token stream that includes trivia tokens (`Whitespace`, `LineComment`, `BlockComment`, `DocComment`); the full `Vec<Token>` is kept on the parse output; AST nodes carry `Span`s. | #3 requires comments/trivia/identifiers/ranges retained "sufficiently for diagnostics and source tooling". A token stream plus spans satisfies every #3 acceptance criterion. A second typed CST tree would duplicate the AST grammar (real maintenance cost while #2 keeps churning the inventory); a generic (rowan-style) CST adds indirection no acceptance criterion needs. Recovery is handled by explicit `Error` AST nodes (§10). |
 | D2 | **AST node = `{ id: NodeId, span: Span, kind: ExprKind }`** (tagged-struct pattern, one shared `NodeId` counter). | Side tables (`type of node`, `symbol of node`) keyed by `NodeId` keep the AST immutable, cheap, and query-friendly; `type_at`/`symbol_at` queries become hash lookups. |
 | D3 | **Unresolved Workshop names are legal.** Semantic analysis resolves user declarations first; anything else goes to `WorkshopProvider::resolve`. A permissive `NoopProvider` returns `NotFound`, and the name is typed `External(...)` with structural checks only (arity when the provider says so, otherwise nothing). | #4 acceptance: Workshop-facing names "can remain externally bound/unresolved through a documented provider contract rather than copied catalog data". This lets every real OSTW project parse and check with zero catalog data. |
-| D4 | **Types live in side tables on the semantic program; HIR is a fully typed tree.** `SemanticProgram::types: HashMap<NodeId, Type>`, `resolution: HashMap<NodeId, Resolution>`. HIR nodes carry `ty: Type` inline because HIR is a fresh tree produced by lowering. | AST stays a pure parse artifact (reusable for edits); HIR consumers (oracle, future workshop-rs adapter) get types inline for free. |
+| D4 | **Types live in side tables on the semantic program; HIR is a fully typed tree.** `SemanticProgram::types: HashMap<NodeId, Type>`, `resolution: HashMap<NodeId, Resolution>`. HIR nodes carry `ty: Type` inline because HIR is a fresh tree produced by lowering. | AST stays a pure parse artifact (reusable for edits); HIR consumers (oracle, the DEL-owned #30 lowering adapter, and the canonical Workshop consumer) get types inline for free. |
 | D5 | **HIR expresses intent, never Workshop encodings.** `new`/`delete` are nodes with lifetime intent; virtual dispatch is `CallTarget::Method { dispatch: Virtual }` (runtime resolves); recursion is legal call-graph cycles with an `is_recursive` storage-intent flag; lambdas are functions with explicit capture lists; global/player/local storage is a `StorageIntent` enum derived from source keywords and rule event context. No slots, no helper rules, no array-of-vector layouts, no reference bit patterns. | #6 non-goals. The oracle (§16) and HIR invariants (§15.4) pin observable intent without encoding it. |
 | D6 | **The semantic oracle is a bounded tree-walking interpreter, not a runtime.** External calls are holes; events never fire; explicit step/recursion limits. | #6 acceptance needs to "distinguish correct/incorrect high-level behavior ... where practical". Bounded scope prevents a second Workshop runtime. |
 
@@ -81,7 +81,7 @@ name = "workshop-lowering.workshop-catalog"
 category = "workshop-lowering"
 state = "lowering-dependent"
 evidence = ["docs/inventory.md"]        # rationale in notes
-notes = "#34 provides CatalogProvider and canonical catalog identity through workshop-rs 0.1.1; HIR-to-WIR lowering is follow-up del-rs #30 work, while the canonical WIR/catalog contract remains owned by workshop-rs."
+notes = "#34 provides CatalogProvider and canonical catalog identity through workshop-rs 0.1.1; the DEL-owned HIR-to-WIR lowering adapter is del-rs #30 work, while the canonical WIR/catalog contract remains owned by workshop-rs."
 
 [[features]]
 id = "editor.codelens"
@@ -253,8 +253,8 @@ The bridge checks file existence, byte bounds, UTF-8 scalar boundaries, reversed
 non-UTF-8 paths rather than clamping or lossy-converting provenance. The Workshop source entries
 carry paths only; DEL source text remains owned by the DEL `SourceMap`. This module has no HIR,
 lowering, backend encoding, provider-specific state, or catalog data, so del-rs #36 can reuse or
-extend it later. HIR-to-WIR lowering remains follow-up del-rs #30 work, while the canonical
-WIR/catalog contract remains owned by workshop-rs.
+extend it later. The DEL-owned HIR-to-WIR lowering adapter is del-rs #30 work, while the
+canonical WIR/catalog contract remains owned by workshop-rs.
 
 ## 7. Lexer
 
@@ -1667,9 +1667,9 @@ the relevant sections above already reflect them. Highlights:
 
 This document is the decision record for the implemented frontend. D1–D6 (§2) are the
 architecture-level decisions. The #34 provider contract (§12) now consumes the released
-`workshop-rs 0.1.1` catalog through public APIs; HIR-to-WIR lowering at the HIR boundary
-(§15) is follow-up del-rs #30 work, while the canonical WIR/catalog contract remains owned
-by workshop-rs. Nothing in this document requires a private Workshop revision or duplicated
+`workshop-rs 0.1.1` catalog through public APIs; the DEL-owned HIR-to-WIR lowering adapter
+at the HIR boundary (§15) is del-rs #30 work, while the canonical WIR/catalog contract
+remains owned by workshop-rs. Nothing in this document requires a private Workshop revision or duplicated
 canonical catalog semantics.
 
 ---
