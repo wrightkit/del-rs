@@ -250,3 +250,29 @@ No matrix entry changes state in this document; all entries remain `planned` as 
 State flips happen at M1/M2 milestones with fixture evidence, per the milestone gates recorded
 in GitHub issue/PR history. Two architecture.md corrections are recorded (Q3 extension
 fallback; Q16 hex claim).
+
+## #31 scalar value-parameter subroutine slice (2026-08-18)
+
+The released WIR `CallSubroutine` has no argument or return-value fields. DEL
+therefore uses a narrow adapter ABI for an evidence-backed subset: a direct
+call from a global Workshop rule to a non-recursive, non-player, `void`
+subroutine with scalar value parameters emits one `SetGlobalVariable` per
+argument followed by the existing no-argument `CallSubroutine` action. The
+callee parameter variables read and write their deterministic synthetic global
+slots; assignment does not write back to the caller.
+
+Parameter slots are allocated after declared global variables and reservations,
+in function declaration order and parameter declaration order, with names
+`__del_param_f<function>_p<parameter>`. Slot and action provenance points to the
+parameter declaration and argument expression respectively. Positional and
+named arguments are normalized to parameter identity, but materialization
+actions retain source argument order. Parameter names are never used as global
+identity.
+
+The global-slot ABI is intentionally not shared across player rules or nested
+execution. Player-context callers, nested/re-entrant/recursive subroutines,
+non-`void` returns, `in`/`ref` modes, non-scalar/reference types, unsupported or
+side-effectful arguments, and calls that are not direct global-rule actions
+fail closed with `HI018` and produce no partial WIR. This is a DEL-owned
+lowering decision over existing canonical WIR forms; no parameterized WIR node,
+catalog copy, or upstream runtime layout is introduced.

@@ -354,11 +354,14 @@ rule: "dynamic-switch" Event.OngoingGlobal {
 "#,
     );
     assert!(program.rules.is_empty());
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "HI018"
-            && diagnostic.message.contains("single-evaluation")
-            && diagnostic.message.contains("runtime materialization")
-    }), "{diagnostics:?}");
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "HI018"
+                && diagnostic.message.contains("single-evaluation")
+                && diagnostic.message.contains("runtime materialization")
+        }),
+        "{diagnostics:?}"
+    );
 }
 
 #[test]
@@ -403,6 +406,239 @@ rule: "allocation" Event.OngoingGlobal { Second(); }
             .unwrap()
             .index,
         0
+    );
+}
+
+#[test]
+fn global_rule_scalar_subroutine_parameters_materialize_in_source_order() {
+    let (program, diagnostics) = lower(
+        r#"
+void First(Number amount, String label) "First" {
+    amount += 1;
+}
+void Second(Number amount) "Second" {
+    amount++;
+}
+rule: "params" Event.OngoingGlobal {
+    First(2, "one");
+    Second(amount: 3);
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    program.validate().expect("structurally valid WIR");
+    assert_eq!(program.global_variables.len(), 3);
+    assert_eq!(
+        program
+            .global_variables
+            .iter()
+            .map(|variable| variable.name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "__del_param_f0_p0",
+            "__del_param_f0_p1",
+            "__del_param_f1_p0"
+        ]
+    );
+    let rule = program
+        .rules
+        .iter()
+        .find(|rule| rule.name == "params")
+        .expect("parameter rule");
+    assert_eq!(rule.actions.len(), 5);
+    for (index, action) in rule.actions.iter().take(2).enumerate() {
+        assert!(
+            matches!(
+                program.actions.get(*action),
+                Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+            ),
+            "action {index} must materialize a parameter"
+        );
+    }
+    assert!(matches!(
+        program.actions.get(rule.actions[2]),
+        Some(workshop_rs::wir::Action::CallSubroutine { .. })
+    ));
+    assert!(matches!(
+        program.actions.get(rule.actions[3]),
+        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+    ));
+    assert!(matches!(
+        program.actions.get(rule.actions[4]),
+        Some(workshop_rs::wir::Action::CallSubroutine { .. })
+    ));
+    assert!(program
+        .global_variables
+        .iter()
+        .all(|variable| { variable.span.is_some() && variable.name_span.is_some() }));
+    let parameter_spans = [(2, 19, 25), (2, 34, 39), (5, 20, 26)];
+    for (variable, (line, start, end)) in program.global_variables.iter().zip(parameter_spans) {
+        let span = variable.span.unwrap();
+        assert_eq!(
+            (span.start.line, span.start.col, span.end.col),
+            (line, start, end)
+        );
+        assert_eq!(variable.name_span, variable.span);
+    }
+    for (action, (line, start, end, target_line, target_start, target_end)) in [
+        (rule.actions[0], (9, 11, 12, 2, 19, 25)),
+        (rule.actions[1], (9, 14, 19, 2, 34, 39)),
+        (rule.actions[3], (10, 20, 21, 5, 20, 26)),
+    ] {
+        let workshop_rs::wir::Action::SetGlobalVariable {
+            span, target_span, ..
+        } = program.actions.get(action).unwrap()
+        else {
+            panic!("expected parameter materialization action")
+        };
+        let span = span.unwrap();
+        assert_eq!(
+            (span.start.line, span.start.col, span.end.col),
+            (line, start, end)
+        );
+        let target_span = target_span.unwrap();
+        assert_eq!(
+            (
+                target_span.start.line,
+                target_span.start.col,
+                target_span.end.col
+            ),
+            (target_line, target_start, target_end)
+        );
+    }
+    for (action, (line, start, end)) in [
+        (rule.actions[2], (9, 5, 20)),
+        (rule.actions[4], (10, 5, 22)),
+    ] {
+        let workshop_rs::wir::Action::CallSubroutine { span, .. } =
+            program.actions.get(action).unwrap()
+        else {
+            panic!("expected subroutine call action")
+        };
+        let span = span.unwrap();
+        assert_eq!(
+            (span.start.line, span.start.col, span.end.col),
+            (line, start, end)
+        );
+    }
+    let first = program
+        .rules
+        .iter()
+        .find(|rule| matches!(rule.event, workshop_rs::wir::Event::Subroutine(_)))
+        .expect("first subroutine rule");
+    assert!(first.actions.iter().any(|action| matches!(
+        program.actions.get(*action),
+        Some(workshop_rs::wir::Action::ModifyGlobalVariable { .. })
+    )));
+}
+
+#[test]
+fn parameter_runtime_rejects_player_recursive_nested_and_nonvoid_calls() {
+    let cases = [
+        (
+            r#"
+void Player(Number amount) playervar "Player" { }
+rule: "player" Event.OngoingPlayer { Player(1); }
+"#,
+            "global Workshop rule",
+        ),
+        (
+            r#"
+recursive void Loop(Number amount) "Loop" { }
+rule: "recursive" Event.OngoingGlobal { Loop(1); }
+"#,
+            "non-recursive",
+        ),
+        (
+            r#"
+void Inner(Number amount) "Inner" { }
+void Outer(Number amount) "Outer" { Inner(amount); }
+rule: "nested" Event.OngoingGlobal { Outer(1); }
+"#,
+            "nested subroutine",
+        ),
+        (
+            r#"
+Number Return(Number amount) "Return" { return amount; }
+rule: "return" Event.OngoingGlobal { Return(1); }
+"#,
+            "return void",
+        ),
+        (
+            r#"
+void Ref(ref Number amount) "Ref" { }
+rule: "ref" Event.OngoingGlobal { Ref(1); }
+"#,
+            "scalar value parameters",
+        ),
+        (
+            r#"
+void Array(Number[] amount) "Array" { }
+rule: "array" Event.OngoingGlobal { Array([1]); }
+"#,
+            "scalar value parameters",
+        ),
+        (
+            r#"
+void Nested(Number amount) "Nested" { }
+rule: "nested" Event.OngoingGlobal { if (true) { Nested(1); } }
+"#,
+            "direct global-rule actions",
+        ),
+    ];
+    for (source, message) in cases {
+        let (program, diagnostics) = lower(source);
+        assert!(program.rules.is_empty(), "{source}");
+        assert!(
+            diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "HI018" && diagnostic.message.contains(message)
+            }),
+            "{source}\n{diagnostics:?}"
+        );
+    }
+}
+
+#[test]
+fn parameter_slots_are_allocated_after_global_reservations() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number explicit 2;
+globalvar { "reserved", 0 };
+void First(Number amount) "First" { }
+rule: "reserved-params" Event.OngoingGlobal { First(1); }
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    assert_eq!(program.global_variables.len(), 3);
+    assert_eq!(
+        program
+            .global_variables
+            .get(workshop_rs::wir::GlobalVarId::from_index(0))
+            .unwrap()
+            .index,
+        2
+    );
+    assert_eq!(
+        program
+            .global_variables
+            .get(workshop_rs::wir::GlobalVarId::from_index(1))
+            .unwrap()
+            .index,
+        0
+    );
+    assert_eq!(
+        program
+            .global_variables
+            .get(workshop_rs::wir::GlobalVarId::from_index(2))
+            .unwrap()
+            .index,
+        1
     );
 }
 
