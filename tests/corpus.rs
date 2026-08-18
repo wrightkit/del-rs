@@ -270,11 +270,33 @@ fn compatibility_report_classifies_evidence_and_gaps() {
             .count()
     );
     assert_eq!(report.summary.unexpected_regressions, 0);
+    let counted = report.cases.iter().fold([0usize; 5], |mut counts, case| {
+        let index = match case.status {
+            del_rs::compatibility::FixtureStatus::Matched => 0,
+            del_rs::compatibility::FixtureStatus::KnownGap => 1,
+            del_rs::compatibility::FixtureStatus::Unsupported => 2,
+            del_rs::compatibility::FixtureStatus::UnexpectedRegression => 3,
+            del_rs::compatibility::FixtureStatus::Inconclusive => 4,
+        };
+        counts[index] += 1;
+        counts
+    });
+    assert_eq!(
+        counted,
+        [
+            report.summary.matched,
+            report.summary.known_gaps,
+            report.summary.unsupported,
+            report.summary.unexpected_regressions,
+            report.summary.inconclusive,
+        ]
+    );
     assert!(report.cases.iter().any(|case| {
         case.fixture.evidence == del_rs::compatibility::EvidenceSource::PinnedOracle
     }));
-    assert!(report.cases.iter().any(|case| {
-        case.fixture.evidence == del_rs::compatibility::EvidenceSource::RealProject
+    assert!(report.cases.iter().all(|case| {
+        case.fixture.evidence != del_rs::compatibility::EvidenceSource::RealProject
+            || !case.fixture.source.contains("ItsDeltin/Overwatch-Script-To-Workshop")
     }));
     for case in &report.cases {
         if case.fixture.expect == del_rs::compatibility::ExpectedOutcome::Unknown {

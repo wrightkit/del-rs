@@ -207,6 +207,7 @@ fn parse_metadata(
 
     let source = source.ok_or("missing // source: independent evidence pointer")?;
     let license = license.ok_or("missing // license: provenance marker")?;
+    validate_license(&license)?;
     let expect = expect.ok_or("missing // expect: outcome")?;
     let evidence = match evidence {
         Some(evidence) => evidence,
@@ -264,27 +265,76 @@ fn validate_source(
     evidence: EvidenceSource,
     meta: &matrix::MatrixMeta,
 ) -> Result<(), String> {
-    if !matches!(
-        evidence,
-        EvidenceSource::PinnedOracle | EvidenceSource::RealProject
-    ) {
-        return Ok(());
-    }
+    let Some((repository, revision, path)) = parse_github_blob_source(source) else {
+        return if matches!(
+            evidence,
+            EvidenceSource::PinnedOracle | EvidenceSource::RealProject
+        ) {
+            Err(format!(
+                "{evidence:?} source must be an immutable GitHub blob URL with a full commit and path"
+            ))
+        } else {
+            Ok(())
+        };
+    };
 
-    let prefix = format!(
-        "https://github.com/{}/blob/{}/",
-        meta.upstream_repo, meta.upstream_pin
-    );
-    if source
-        .strip_prefix(&prefix)
-        .is_some_and(|path| !path.is_empty())
+    match evidence {
+        EvidenceSource::PinnedOracle => {
+            if repository == meta.upstream_repo && revision == meta.upstream_pin {
+                Ok(())
+            } else {
+                Err(format!(
+                    "pinned-oracle source must point to {} at the pinned commit",
+                    meta.upstream_repo
+                ))
+            }
+        }
+        EvidenceSource::RealProject => {
+            if repository == meta.upstream_repo {
+                Err(
+                    "real-project source must use its own repository, not the pinned upstream compiler repository"
+                        .into(),
+                )
+            } else if path.is_empty() {
+                Err("real-project source must identify a repository path".into())
+            } else {
+                Ok(())
+            }
+        }
+        EvidenceSource::SemanticContract | EvidenceSource::InternalInvariant => Ok(()),
+    }
+}
+
+fn parse_github_blob_source(source: &str) -> Option<(String, String, String)> {
+    let rest = source.strip_prefix("https://github.com/")?;
+    let (repository, rest) = rest.split_once("/blob/")?;
+    let (revision, path) = rest.split_once('/')?;
+    let mut repository_parts = repository.split('/');
+    let owner = repository_parts.next()?;
+    let name = repository_parts.next()?;
+    if owner.is_empty()
+        || name.is_empty()
+        || repository_parts.next().is_some()
+        || revision.len() != 40
+        || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || path.is_empty()
+        || path.contains('?')
+        || path.contains('#')
     {
-        Ok(())
+        return None;
+    }
+    Some((
+        repository.to_string(),
+        revision.to_string(),
+        path.to_string(),
+    ))
+}
+
+fn validate_license(license: &str) -> Result<(), String> {
+    if license.trim().is_empty() {
+        Err("// license: must identify the fixture license".into())
     } else {
-        Err(format!(
-            "{evidence:?} source must point to {} at the pinned upstream commit",
-            meta.upstream_repo
-        ))
+        Ok(())
     }
 }
 
@@ -432,7 +482,7 @@ mod tests {
     fn meta() -> matrix::MatrixMeta {
         matrix::MatrixMeta {
             upstream_repo: "example/ostw".into(),
-            upstream_pin: "0123456789abcdef".into(),
+            upstream_pin: "0123456789abcdef0123456789abcdef01234567".into(),
             dialect: "ostw".into(),
         }
     }
@@ -442,7 +492,7 @@ mod tests {
         let meta = meta();
         assert!(
             validate_source(
-                "https://github.com/example/ostw/blob/0123456789abcdef/tests/Parser.cs",
+                "https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/tests/Parser.cs",
                 EvidenceSource::PinnedOracle,
                 &meta,
             )
@@ -456,6 +506,69 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn real_project_requires_its_own_immutable_repository() {
+        let meta = meta();
+        assert!(
+            validate_source(
+                "https://github.com/example/project/blob/0123456789abcdef0123456789abcdef01234567/src/main.del",
+                EvidenceSource::RealProject,
+                &meta,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_source(
+                "https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/src/main.del",
+                EvidenceSource::RealProject,
+                &meta,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn real_project_rejects_mutable_or_incomplete_source_pointers() {
+        let meta = meta();
+        for source in [
+            "https://github.com/example/project/blob/main/src/main.del",
+            "https://github.com/example/project/blob/0123456789abcdef/src/main.del",
+            "https://github.com/example/project/blob/0123456789abcdef0123456789abcdef01234567",
+        ] {
+            assert!(
+                validate_source(source, EvidenceSource::RealProject, &meta).is_err(),
+                "accepted invalid real-project source: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn real_project_metadata_rejects_upstream_compiler_source() {
+        let root = Path::new("/repo");
+        let path = root.join("tests/corpus/projects/real.del");
+        let text = "// source: https://github.com/example/ostw/blob/0123456789abcdef0123456789abcdef01234567/src/main.del\n// license: MIT\n// expect: ok\n// evidence: real-project\n";
+        let error = parse_metadata(
+            root,
+            &path,
+            text,
+            &matrix::SupportMatrix {
+                meta: meta(),
+                entries: Vec::new(),
+            },
+        )
+        .expect_err("upstream compiler identity must not pass as real-project evidence");
+        assert!(
+            error.contains("own repository"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn license_must_be_present_and_non_empty() {
+        assert!(validate_license("MIT").is_ok());
+        assert!(validate_license("  ").is_err());
     }
 
     #[test]
