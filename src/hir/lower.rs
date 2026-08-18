@@ -34,6 +34,7 @@ pub fn lower(program: &SemanticProgram) -> (HirProgram, Vec<crate::diagnostics::
             classes: Vec::new(),
             enums: Vec::new(),
             vars: Vec::new(),
+            reservations: Vec::new(),
             rules: Vec::new(),
             exprs: Vec::new(),
             top: Vec::new(),
@@ -121,18 +122,40 @@ impl<'a> Lowerer<'a> {
                     ValueSemantics::Value
                 };
                 let vid = self.hir.vars.len() as HirVarId;
+                let explicit_id = self
+                    .program
+                    .var_symbol_of(v.name.id)
+                    .and_then(|sid| self.program.tables.symbol(sid).flags.var_id)
+                    .and_then(|id| u32::try_from(id).ok());
                 self.hir.vars.push(HirVar {
                     name: v.name.name.clone(),
                     ty,
                     storage,
                     semantics,
                     is_const: v.is_const_init,
+                    explicit_id,
                     span: v.name.span,
                 });
                 if let Some(sid) = self.program.var_symbol_of(v.name.id) {
                     self.symbol_var.insert(sid, vid);
                 }
                 self.local_vars.insert(v.name.id, vid);
+            }
+            ItemKind::VarReservation(reservation) => {
+                let storage = match reservation.storage {
+                    StorageModifier::GlobalVar => StorageIntent::Global,
+                    StorageModifier::PlayerVar => StorageIntent::Player,
+                };
+                self.hir.reservations.push(HirReservation {
+                    storage,
+                    names: reservation
+                        .names
+                        .iter()
+                        .map(NameText::name_text)
+                        .filter(|name| !name.is_empty())
+                        .collect(),
+                    span: item.span,
+                });
             }
             ItemKind::Function(f) => {
                 let sid = self.program.function_symbol_of(f.name.id);
@@ -338,6 +361,7 @@ impl<'a> Lowerer<'a> {
                 let body = self.lower_stmt_block(&r.body);
                 self.hir.rules.push(HirRule {
                     name: Some(r.name.name_text()),
+                    name_span: string_content_span(&r.name),
                     disabled: r.disabled,
                     sort_order: r.sort_order.as_ref().and_then(number_i64),
                     event,
@@ -350,6 +374,7 @@ impl<'a> Lowerer<'a> {
             ItemKind::VanillaRule(v) => {
                 self.hir.rules.push(HirRule {
                     name: v.name.as_ref().map(|e| e.name_text()),
+                    name_span: v.name.as_ref().and_then(string_content_span),
                     disabled: false,
                     sort_order: None,
                     event: None,
@@ -426,6 +451,7 @@ impl<'a> Lowerer<'a> {
             storage: StorageIntent::Local,
             semantics: ValueSemantics::Value,
             is_const: false,
+            explicit_id: None,
             span,
         });
         vid
@@ -683,13 +709,21 @@ impl<'a> Lowerer<'a> {
                 HirExprKind::External {
                     name: self.ident_name(e),
                     namespace: Vec::new(),
-                    binding: None,
                 }
             }
-            ExprKind::Member { base, name } => HirExprKind::Member {
-                base: self.expr(base),
-                member: self.lower_member_target(name),
-            },
+            ExprKind::Member { base, name } => {
+                if matches!(self.program.resolution.get(&e.id), Some(Resolution::External(_))) {
+                    HirExprKind::External {
+                        name: name.name.clone(),
+                        namespace: self.member_namespace(base),
+                    }
+                } else {
+                    HirExprKind::Member {
+                        base: self.expr(base),
+                        member: self.lower_member_target(name),
+                    }
+                }
+            }
             ExprKind::Index { base, index } => HirExprKind::Index {
                 base: self.expr(base),
                 index: self.expr(index),
@@ -757,7 +791,6 @@ impl<'a> Lowerer<'a> {
                 HirExprKind::External {
                     name: String::new(),
                     namespace: Vec::new(),
-                    binding: None,
                 }
             }
             ExprKind::This => HirExprKind::This { class: 0 },
@@ -895,7 +928,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: id.name.clone(),
                             namespace: Vec::new(),
-                            binding: None,
+                            span: call.callee.span,
                         },
                         args,
                     }
@@ -904,7 +937,7 @@ impl<'a> Lowerer<'a> {
                     target: CallTarget::External {
                         name: id.name.clone(),
                         namespace: Vec::new(),
-                        binding: None,
+                        span: call.callee.span,
                     },
                     args,
                 },
@@ -972,7 +1005,7 @@ impl<'a> Lowerer<'a> {
                         target: CallTarget::External {
                             name: name.name.clone(),
                             namespace: self.member_namespace(base),
-                            binding: None,
+                            span: call.callee.span,
                         },
                         args,
                     },
@@ -1112,9 +1145,8 @@ impl NameText for Expr {
     fn name_text(&self) -> String {
         match &self.kind {
             ExprKind::Str(s) => {
-                let len = s.raw.len();
-                if len >= 2 {
-                    s.raw[1..len - 1].to_string()
+                if let Some((start, end)) = string_content_bounds(s) {
+                    s.raw[start..end].to_string()
                 } else {
                     s.raw.clone()
                 }
@@ -1122,4 +1154,26 @@ impl NameText for Expr {
             _ => String::new(),
         }
     }
+}
+
+fn string_content_span(expr: &Expr) -> Option<Span> {
+    let ExprKind::Str(string) = &expr.kind else {
+        return None;
+    };
+    let (start, end) = string_content_bounds(string)?;
+    Some(Span::new(
+        expr.span.file,
+        expr.span.start + start as u32,
+        expr.span.start + end as u32,
+    ))
+}
+
+fn string_content_bounds(string: &crate::syntax::ast::StrLit) -> Option<(usize, usize)> {
+    let prefix = usize::from(matches!(
+        string.quote,
+        crate::syntax::ast::QuoteKind::Localized | crate::syntax::ast::QuoteKind::Interpolated
+    ));
+    let start = prefix + 1;
+    let end = string.raw.len().checked_sub(1)?;
+    (start <= end).then_some((start, end))
 }

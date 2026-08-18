@@ -155,6 +155,7 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("HI015", "auto-for variable storage conflict"),
     ("HI016", "field initializer type mismatch"),
     ("HI017", "interpolation/async/hook shape violation"),
+    ("HI018", "HIR construct cannot be lowered to canonical Workshop WIR"),
     ("HI099", "HIR has validation errors; oracle refuses to execute"),
     // Oracle
     ("OR001", "stale reference: use of a deleted object"),

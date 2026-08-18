@@ -75,6 +75,29 @@ fn catalog_provider_resolves_del_event_names_to_canonical_ids() {
 }
 
 #[test]
+fn catalog_provider_resolves_the_expanded_del_event_inventory() {
+    let provider = CatalogProvider::new().expect("built-in catalog");
+    for (source, canonical) in [
+        ("OnElimination", "playerEarnedElimination"),
+        ("OnFinalBlow", "playerDealtFinalBlow"),
+        ("OnDamageDealt", "playerDealtDamage"),
+        ("OnDamageTaken", "playerTookDamage"),
+        ("OnDeath", "playerDied"),
+        ("OnHealingDealt", "playerDealtHealing"),
+        ("OnHealingTaken", "playerReceivedHealing"),
+        ("OnPlayerJoin", "playerJoined"),
+        ("OnPlayerLeave", "playerLeft"),
+    ] {
+        let result = provider.resolve(&query(&["Event"], source, ExternalPosition::Value, 0));
+        let ExternalResolution::Known(ExternalBinding::Event(event)) = result else {
+            panic!("expected canonical event binding for {source}");
+        };
+        assert_eq!(event.canonical_id, canonical);
+        assert_eq!(event.context, Some(EventContext::Player));
+    }
+}
+
+#[test]
 fn catalog_provider_resolves_enum_member_without_copying_catalog_data() {
     let provider = CatalogProvider::new().expect("built-in catalog");
     let result = provider.resolve(&query(&["Team"], "All", ExternalPosition::Value, 0));

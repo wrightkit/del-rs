@@ -194,6 +194,15 @@ impl CatalogProvider {
         let canonical = match name {
             "OngoingGlobal" => "global",
             "OngoingPlayer" => "eachPlayer",
+            "OnElimination" => "playerEarnedElimination",
+            "OnFinalBlow" => "playerDealtFinalBlow",
+            "OnDamageDealt" => "playerDealtDamage",
+            "OnDamageTaken" => "playerTookDamage",
+            "OnDeath" => "playerDied",
+            "OnHealingDealt" => "playerDealtHealing",
+            "OnHealingTaken" => "playerReceivedHealing",
+            "OnPlayerJoin" => "playerJoined",
+            "OnPlayerLeave" => "playerLeft",
             "Subroutine" => "subroutine",
             _ => name,
         };
@@ -240,10 +249,12 @@ impl WorkshopProvider for CatalogProvider {
             let Some((entry, canonical_id)) = self.resolve_event(&query.name) else {
                 return ExternalResolution::NotFound;
             };
-            let context = match canonical_id.as_str() {
-                "global" => Some(EventContext::Global),
-                "eachPlayer" => Some(EventContext::Player),
-                _ => None,
+            let context = if canonical_id == "global" {
+                Some(EventContext::Global)
+            } else if canonical_id == "eachPlayer" || canonical_id.starts_with("player") {
+                Some(EventContext::Player)
+            } else {
+                None
             };
             return ExternalResolution::Known(ExternalBinding::Event(ExternalEventInfo {
                 canonical_id: entry.id.clone(),

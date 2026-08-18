@@ -10,7 +10,7 @@ use crate::semantic::resolve::Resolution;
 use crate::semantic::symbols::SymbolId;
 use crate::semantic::types::Type;
 use crate::semantic::SemanticProgram;
-use crate::span::{FileId, Span};
+use crate::span::{FileId, SourceMap, Span};
 use crate::syntax::parse_source;
 use crate::syntax::token::Token;
 use std::path::Path;
@@ -60,6 +60,15 @@ pub fn lower_to_hir(program: &SemanticProgram) -> (HirProgram, Vec<Diagnostic>) 
 
 pub fn validate_hir(hir: &HirProgram) -> Vec<Diagnostic> {
     crate::hir::validate::validate(hir)
+}
+
+/// Lower validated HIR into canonical Workshop WIR while preserving source
+/// provenance through the supplied project source registry.
+pub fn lower_to_wir(
+    hir: &HirProgram,
+    sources: &SourceMap,
+) -> (workshop_rs::wir::Program, Vec<Diagnostic>) {
+    crate::workshop::lower_to_wir(hir, sources)
 }
 
 // ---- queries ----

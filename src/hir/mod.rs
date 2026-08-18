@@ -5,7 +5,6 @@
 //! intent — without any Workshop encoding (no slots, no helper rules, no
 //! reference bit layouts).
 
-use crate::semantic::provider::ExternalBinding;
 use crate::semantic::types::Type;
 use crate::span::Span;
 use std::collections::HashMap;
@@ -27,6 +26,7 @@ pub struct HirProgram {
     pub classes: Vec<HirClass>,
     pub enums: Vec<HirEnum>,
     pub vars: Vec<HirVar>,
+    pub reservations: Vec<HirReservation>,
     pub rules: Vec<HirRule>,
     /// Expression registry: id -> node (HirExprId - 1 indexes this).
     pub exprs: Vec<HirExpr>,
@@ -146,12 +146,22 @@ pub struct HirVar {
     pub storage: StorageIntent,
     pub semantics: ValueSemantics,
     pub is_const: bool,
+    pub explicit_id: Option<u32>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub struct HirReservation {
+    pub storage: StorageIntent,
+    pub names: Vec<String>,
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
 pub struct HirRule {
     pub name: Option<String>,
+    /// The exact source span of the rule name inside its string literal.
+    pub name_span: Option<Span>,
     pub disabled: bool,
     pub sort_order: Option<i64>,
     pub event: Option<HirExprId>,
@@ -258,7 +268,6 @@ pub enum HirExprKind {
     External {
         name: String,
         namespace: Vec<String>,
-        binding: Option<ExternalBinding>,
     },
     Error,
 }
@@ -297,7 +306,9 @@ pub enum CallTarget {
     External {
         name: String,
         namespace: Vec<String>,
-        binding: Option<ExternalBinding>,
+        /// The source span of the external callee. Provider bindings are
+        /// resolved later by the DEL-owned lowering context.
+        span: Span,
     },
 }
 
