@@ -297,7 +297,7 @@ impl<'a> Lowerer<'a> {
         self.out.rules.push(wir::Rule {
             name: rule.name.clone().unwrap_or_default(),
             span: self.ws_span(rule.span),
-            name_span: self.ws_span(rule.span),
+            name_span: rule.name_span.and_then(|span| self.ws_span(span)),
             disabled: rule.disabled,
             event,
             conditions,

@@ -161,6 +161,8 @@ pub struct HirReservation {
 #[derive(Clone, Debug)]
 pub struct HirRule {
     pub name: Option<String>,
+    /// The exact source span of the rule name inside its string literal.
+    pub name_span: Option<Span>,
     pub disabled: bool,
     pub sort_order: Option<i64>,
     pub event: Option<HirExprId>,

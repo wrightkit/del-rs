@@ -361,6 +361,7 @@ impl<'a> Lowerer<'a> {
                 let body = self.lower_stmt_block(&r.body);
                 self.hir.rules.push(HirRule {
                     name: Some(r.name.name_text()),
+                    name_span: string_content_span(&r.name),
                     disabled: r.disabled,
                     sort_order: r.sort_order.as_ref().and_then(number_i64),
                     event,
@@ -373,6 +374,7 @@ impl<'a> Lowerer<'a> {
             ItemKind::VanillaRule(v) => {
                 self.hir.rules.push(HirRule {
                     name: v.name.as_ref().map(|e| e.name_text()),
+                    name_span: v.name.as_ref().and_then(string_content_span),
                     disabled: false,
                     sort_order: None,
                     event: None,
@@ -1153,9 +1155,8 @@ impl NameText for Expr {
     fn name_text(&self) -> String {
         match &self.kind {
             ExprKind::Str(s) => {
-                let len = s.raw.len();
-                if len >= 2 {
-                    s.raw[1..len - 1].to_string()
+                if let Some((start, end)) = string_content_bounds(s) {
+                    s.raw[start..end].to_string()
                 } else {
                     s.raw.clone()
                 }
@@ -1163,4 +1164,26 @@ impl NameText for Expr {
             _ => String::new(),
         }
     }
+}
+
+fn string_content_span(expr: &Expr) -> Option<Span> {
+    let ExprKind::Str(string) = &expr.kind else {
+        return None;
+    };
+    let (start, end) = string_content_bounds(string)?;
+    Some(Span::new(
+        expr.span.file,
+        expr.span.start + start as u32,
+        expr.span.start + end as u32,
+    ))
+}
+
+fn string_content_bounds(string: &crate::syntax::ast::StrLit) -> Option<(usize, usize)> {
+    let prefix = usize::from(matches!(
+        string.quote,
+        crate::syntax::ast::QuoteKind::Localized | crate::syntax::ast::QuoteKind::Interpolated
+    ));
+    let start = prefix + 1;
+    let end = string.raw.len().checked_sub(1)?;
+    (start <= end).then_some((start, end))
 }

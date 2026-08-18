@@ -70,6 +70,13 @@ rule: "damage" Event.OnDamageDealt if (score > 0) {
     assert_eq!(rule.conditions.len(), 1);
     assert_eq!(rule.actions.len(), 1);
     assert!(rule.span.is_some());
+    let name_span = rule.name_span.expect("rule name provenance");
+    assert_eq!(name_span.file.index(), 0);
+    assert_eq!(name_span.start.line, 3);
+    assert_eq!(name_span.start.col, 8);
+    assert_eq!(name_span.end.line, 3);
+    assert_eq!(name_span.end.col, 14);
+    assert_ne!(name_span, rule.span.unwrap());
     assert!(program.dump().contains("PlayerDealtDamage"));
 }
 
