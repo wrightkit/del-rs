@@ -93,10 +93,9 @@ Where evidence is absent, the permissive/`planned` default applies and is marked
    TextColor:Color.Blue, Location:Location.Right, SortOrder:0)` — mixed call, positional
    first.
    Decision: positional args fill parameters by source index in order; named args bind by
-   parameter name (any position); named-before-positional ordering is an error (the
-   architecture §13.6 "positional ... before named args" rule is ratified); codes
-   `SM010` (unknown name), `SM011` (duplicate), ordering violation gets a code under the
-   call rules.
+   parameter name (trailing named arguments only); named-before-positional ordering is an
+   error (the architecture §13.6 "positional ... before named args" rule is ratified); codes
+   `SM010` (unknown name), `SM011` (duplicate), and `SM053` (ordering violation).
    Matrix: `semantic.overloads` stays `planned` (M2).
 
 7. **`const` scope — function types only; no const scalar variables/params.**

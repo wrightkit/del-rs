@@ -1831,6 +1831,18 @@ impl<'a> Checker<'a> {
     // ------------------------------------------------------------------
 
     fn check_call(&mut self, expr: &Expr, call: &CallExpr) -> Type {
+        let mut seen_named = false;
+        for arg in &call.args {
+            if arg.name.is_some() {
+                seen_named = true;
+            } else if seen_named {
+                self.err(
+                    "SM053",
+                    arg.value.span,
+                    "positional argument cannot follow a named argument",
+                );
+            }
+        }
         let arg_types: Vec<Type> = call.args.iter().map(|a| self.check_expr(&a.value)).collect();
         match &call.callee.kind {
             ExprKind::Ident(id) => {

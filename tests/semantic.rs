@@ -69,6 +69,14 @@ fn immutable_variable_assignment_sm048() {
 }
 
 #[test]
+fn named_argument_must_precede_no_positional_argument_sm053() {
+    let (diags, _) = check(
+        "void f(Number a, Number b) { }\nrule: \"\" {\n    f(b: 2, 1);\n}\n",
+    );
+    assert!(has_code(&diags, "SM053"), "{:?}", codes(&diags));
+}
+
+#[test]
 fn overload_resolution_and_named_args() {
     let text = r#"
 void f(Number a) { }

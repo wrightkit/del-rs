@@ -259,7 +259,7 @@ fn named_workshop_arguments_reorder_and_materialize_catalog_defaults() {
     let (program, diagnostics) = lower(
         r#"
 rule: "message" Event.OngoingGlobal {
-    SmallMessage(VisibleTo: AllPlayers(Team.All), Header: "Hello");
+    SmallMessage(Header: "Hello");
 }
 "#,
     );

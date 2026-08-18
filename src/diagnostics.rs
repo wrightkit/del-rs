@@ -136,6 +136,7 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("SM050", "generic function instantiation requires a resolvable type"),
     ("SM051", "return value mismatch"),
     ("SM052", "condition must be bool-compatible"),
+    ("SM053", "positional argument follows a named argument"),
     ("SM099", "too many semantic errors; stopping"),
     // HIR validation
     ("HI001", "node span is invalid (unknown file or out-of-range offsets)"),
