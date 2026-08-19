@@ -1,79 +1,84 @@
 # del-rs
 
-`del-rs` is WrightKit's Rust implementation of the DeltinScript / OSTW
-language. It provides a standalone library and CLI for parsing, loading,
-type-checking, and analyzing `.del` / `.ostw` projects with structured
-diagnostics and source provenance.
+`del-rs` is WrightKit's standalone Rust implementation of the DeltinScript /
+OSTW language surface. It is intended to be useful on its own as a library and
+CLI for parsing, loading, type-checking, inspecting, compiling, and eventually
+reconstructing supported `.del` / `.ostw` projects.
 
-Canonical Workshop catalog data, localization, and emission are provided by
-`workshop-rs` rather than duplicated in this repository; the integration
-boundary is documented in the [architecture reference](docs/architecture.md).
+Wright is a downstream consumer that integrates `del-rs` with broader tooling
+such as linting, analysis, validated source editing, agent workflows, CI, and
+language services. The word **frontend** describes only the internal
+Workshop-independent source-to-semantic stage inside `del-rs`; it is not the
+repository's product identity. Likewise, an LPP **provider** is an integration
+role that `del-rs` may expose to Wright or other tooling clients.
+
+Canonical raw Workshop behavior is shared rather than duplicated. `del-rs`
+owns DEL/OSTW syntax, project loading, semantic/type behavior, runtime lowering,
+compiler behavior, diagnostics/provenance, standalone tooling, compatibility
+evidence, and Workshop-to-DEL reconstruction. `workshop-rs` owns canonical
+Workshop catalog identities, WIR, validation, settings/localization, raw
+Workshop parsing, and emission.
+
+```text
+DEL / OSTW source
+    ↓
+del-rs source frontend
+    ↓
+DEL semantic model / typed HIR
+    ↓
+del-rs runtime + compiler lowering
+    ↓
+workshop-rs canonical WIR / validation / emission
+    ↓
+Workshop text
+```
+
+The reverse direction starts with Workshop parsed by `workshop-rs` and uses
+`del-rs`-owned reconstruction logic to produce useful DEL/OSTW source.
 
 ## Features
 
-- **Recoverable parsing:** retains authored text, comments, trivia, and source
-  locations while producing partial trees for invalid or incomplete input.
-- **Project loading:** resolves multi-file imports with deterministic ordering.
+- **Recoverable parsing:** authored text, comments, trivia, identifiers, and
+  source locations are retained for diagnostics and source tooling.
+- **Project loading:** deterministic multi-file import resolution and project
+  discovery.
 - **Semantic analysis:** name and type resolution, overloads, access control,
   classes, structs, enums, inheritance, virtual dispatch, generics, lambdas,
   pattern matching, and recursion checks.
-- **Typed semantic representation:** preserves allocation/deletion, references,
-  dispatch, recursion, lambdas, and storage intent without hard-coding Workshop
-  encodings.
-- **Tooling APIs:** symbol, reference, type, and resolution queries for Wright
-  and other consumers.
-- **Compatibility evidence:** a machine-checked support matrix, corpus fixtures,
-  provenance records, a bounded semantic oracle, and an evidence report
-  (`del-rs maintainer compatibility --json`).
+- **Typed semantic representation:** allocation/deletion, references, dispatch,
+  recursion, closures, and storage intent remain backend-neutral until lowering.
+- **Tooling APIs:** symbol, reference, type, and resolution queries for
+  standalone consumers and Wright.
+- **Compiler integration:** DEL HIR lowers through canonical `workshop-rs` WIR;
+  unsupported runtime/project behavior remains explicit.
+- **Compatibility evidence:** machine-checked support matrix, corpus fixtures,
+  provenance records, bounded semantic oracle, and evidence reports.
 
-## .del / .ostw compatibility
+## Compatibility
 
 Compatibility targets observable DeltinScript / OSTW semantics for the declared
-support surface, not upstream compiler internals or output-text identity.
-Support claims are backed by the repository corpus and pinned upstream
-evidence.[^upstream-reference]
+support surface, not upstream compiler architecture, formatting, helper names,
+temporary variables, or output-text identity.
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Syntax & parsing | ✅ Supported | Lexer and recoverable parser, comments/trivia retained, corpus-backed |
-| Projects & imports | ✅ Supported | Multi-file import resolution and module loading; `ds.toml` project files not yet |
+| Syntax & parsing | ✅ Supported | Recoverable parser with source/trivia evidence |
+| Projects & imports | ✅ Supported | Multi-file import resolution; project/compiler surfaces continue to expand |
 | Type checking | ✅ Supported | Scoping, overload resolution, access control |
-| Classes, structs & enums | ✅ Supported | Allocation/deletion, copies, enum storage |
-| Inheritance, virtual methods & override | ✅ Supported | |
-| Generics | ✅ Supported | Generic parameters and binding |
-| Lambdas & closures | ✅ Supported | |
-| Pattern matching & recursion | ✅ Supported | |
-| Embedded Workshop / lobby data | 🟡 Partial | Vanilla Workshop blocks parse; lobby-settings import not yet |
-| Workshop builtins | 🟡 Partial | `CatalogProvider` resolves the released canonical `workshop-rs` catalog; lowering is tracked separately |
-| DEL/OSTW → Workshop compilation | 🟡 Partial | del-rs #30 owns the HIR → WIR lowering adapter; canonical WIR/catalog/emission contracts remain owned by workshop-rs, so end-to-end support is not claimed |
-| Workshop → DEL/OSTW reconstruction | ⏳ Not yet | |
-
-> [!NOTE]
-> Editor / VS Code parity and several non-core language experiments are outside
-> the `del-rs` language contract. The exact boundaries are documented in
-> [Limitations](docs/limitations.md).
+| Classes, structs & enums | ✅ Semantic support | High-level semantics exist; some concrete Workshop runtime lowering remains incomplete |
+| Inheritance / virtual dispatch | ✅ Semantic support | Concrete runtime lowering is still being closed |
+| Generics / lambdas / pattern matching / recursion | ✅ Semantic support | End-to-end Workshop behavior remains evidence-gated where applicable |
+| Embedded Workshop / lobby data | 🟡 Partial | Canonical Workshop contracts are still being integrated |
+| Workshop builtins | 🟡 Partial | Canonical catalog binding exists; breadth and lowering continue to expand |
+| DEL/OSTW → Workshop compilation | 🟡 Partial | Core HIR→WIR lowering exists; advanced runtime/project surfaces are incomplete |
+| Workshop → DEL/OSTW reconstruction | ⏳ Not yet | Will consume canonical `workshop-rs` semantics and remain owned by `del-rs` |
 
 Exact feature evidence lives in the
-[machine-readable support matrix](docs/support-matrix.toml); see the
-[compatibility reference](docs/compatibility.md) for methodology and state
+[machine-readable support matrix](docs/support-matrix.toml); see
+[`docs/compatibility.md`](docs/compatibility.md) for methodology and state
 meanings.
 
-## Building
-
-Requirements: Rust 1.85+ (edition 2021). The crate consumes the released
-`workshop-rs 0.1.1` library from crates.io in addition to `serde`,
-`serde_json`, and `toml`; Workshop-independent workflows can continue using
-`NoopProvider`.
-
-```sh
-cargo build --release
-cargo test --all-targets
-```
-
-There are no prebuilt distributions yet. Install from source with
-`cargo install --path .` if you want the `del-rs` binary on your `PATH`.
-
-## Quick start
+## CLI and library
 
 ```text
 del-rs check <file-or-dir> [--json]
@@ -85,63 +90,43 @@ del-rs completion <bash|zsh|fish|powershell>
 del-rs maintainer compatibility [--json]
 ```
 
-Exit codes are `0` for success, `1` for diagnosed source errors, `2` for usage
-errors, `3` for internal CLI failures, and `4` for I/O errors. `inspect` is a
-best-effort query and remains exit `0` when it returns a result alongside source
-diagnostics. With `--json`, stdout contains one machine-readable JSON document
-without ANSI or GitHub workflow decoration; human-readable diagnostics go to
-stderr.
+The standalone semantic/tooling path does not require Wright. Workshop-dependent
+compilation uses the released `workshop-rs` library. See
+[`docs/implementation-role.md`](docs/implementation-role.md) for the durable
+relationship and [`docs/architecture.md`](docs/architecture.md) for internal
+implementation details.
 
-Example:
+## Relationship with Wright
+
+Wright is not the owner of DEL/OSTW language semantics. It consumes `del-rs`
+and adds a unified product layer across DEL/OSTW, OverPy, and raw Workshop,
+including cross-language lint, analysis, source-edit transactions, agent
+interfaces, CI/embedding, and language services.
+
+LPP/provider support is therefore an adapter surface for integration, not the
+identity of this repository.
+
+## Building
+
+Requirements: Rust 1.85+.
 
 ```sh
-del-rs check tests/corpus/highlevel/enum-basic.del
-del-rs support --check
+cargo build --release
+cargo test --all-targets
 ```
 
-The command classification, compatibility aliases, presentation policy, and
-completion generation are documented in [`docs/cli.md`](docs/cli.md).
+Install the current CLI from source with:
 
-### Library usage
-
-```rust
-use del_rs::semantic::provider::NoopProvider;
-
-let mut sources = del_rs::SourceMap::new();
-let id = sources.add_file("main.del".into(), source_text);
-let out = del_rs::syntax::parse_source(id, &source_text);
-
-let report = del_rs::api::check_path(path, &NoopProvider::new());
-for d in &report.diagnostics {
-    println!("[{}] {}", d.code, d.message);
-}
-
-let symbol = del_rs::api::symbol_at(&report.semantic, id, offset);
-let ty = del_rs::api::type_at(&report.semantic, id, offset);
-let matrix = del_rs::matrix::load_and_validate()?;
+```sh
+cargo install --path .
 ```
 
-## How it works
+## Validation
 
-```text
-.del / .ostw source
-    ↓
-lexer → recoverable parser
-    ↓
-project loader
-    ↓
-semantic analysis
-    ↓
-typed intermediate representation
-    ↓
-bounded semantic checks
-    ↓
-[ integration boundary → workshop-rs ]
-```
-
-The [architecture reference](docs/architecture.md) covers module layout,
-diagnostics, the Workshop-name integration seam, semantic representation,
-public APIs, and test strategy.
+Before claiming implementation work complete, run the repository quality gates
+and the affected compatibility/corpus checks. Real-project support claims must
+also be revalidated against the relevant full project rather than inferred from
+unit-test counts alone.
 
 ## Documentation
 
@@ -150,15 +135,10 @@ maintainer references are indexed in [`docs/README.md`](docs/README.md).
 
 ## Contributing
 
-Contributions are welcome through issues and pull requests. Implementation
-sequencing stays in GitHub; durable repository documentation lives under
-`docs/`. Run `cargo test --all-targets` before submitting changes and follow
-the workspace and repository `AGENTS.md` guidance.
+This repository is part of the WrightKit multi-repository workspace. Apply the
+workspace-level `AGENTS.md` first, then this repository's local `AGENTS.md`.
 
 ## License
 
 `del-rs` is distributed under the [MIT license](https://opensource.org/licenses/MIT).
 Compatibility fixtures retain their recorded upstream provenance and licensing.
-
-[^upstream-reference]: The pinned upstream identity, fixture provenance, and
-    licensing rules are recorded in [Provenance](docs/provenance.md).
