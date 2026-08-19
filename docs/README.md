@@ -1,98 +1,83 @@
 # del-rs Documentation
 
-This directory is the durable documentation surface for `del-rs`. Documents
-are organized by durable contract, not by implementation milestone:
-implementation sequencing and acceptance criteria live in GitHub issues and
-pull requests; what remains here describes the crate as it currently exists
-and the boundaries it commits to.
+This directory is the durable documentation surface for `del-rs`. The root
+[`README.md`](../README.md) is the user-facing overview. `del-rs` is a
+standalone DEL/OSTW implementation; documents may use **frontend** for its
+internal Workshop-independent source-to-semantic stage, but not as the product
+identity of the repository.
+
+Implementation sequencing and acceptance criteria live in GitHub issues and
+pull requests. Durable ownership, architecture, interfaces, compatibility, and
+provenance live here.
 
 ## Documentation model
 
 ```text
-GitHub issues/PRs            implementation scope, sequencing, acceptance (historical record)
-  └─ docs/decisions.md       ratified product decisions (Q1–Q16)
-      └─ docs/architecture.md   implemented architecture baseline (living)
-          └─ docs/compatibility.md   compatibility contract (living)
-              └─ reference docs & evidence   inventory, syntax-notes, matrix, provenance, limitations
+implementation-role.md       repository identity and Wright/workshop-rs relationship
+  └─ architecture.md         internal source/project/semantic/HIR architecture
+      └─ compatibility.md    compatibility contract and support-state meanings
+          └─ support-matrix.toml + evidence
 ```
 
 ## Index
 
-### Architecture
+### Ownership and architecture
 
-- [`architecture.md`](architecture.md) — implemented architecture baseline:
-  governing constraints, design decisions (D1–D6), module layout, source
-  model, lexer/parser/project/semantic/HIR/oracle design, public API, CLI
-  contract, and test strategy. This is the authoritative design record.
+- [`implementation-role.md`](implementation-role.md) — standalone DEL/OSTW
+  implementation identity; meaning of frontend/provider; dependency on
+  `workshop-rs`; Wright as downstream tooling/integration consumer.
+- [`architecture.md`](architecture.md) — detailed implemented architecture of
+  the internal Workshop-independent frontend and the DEL-owned integration /
+  lowering seams: module layout, source model, parser/project/semantic/HIR,
+  oracle, public API, CLI contract, and test strategy.
 - [`cli.md`](cli.md) — task-oriented command classification, migration aliases,
   exit codes, presentation policy, GitHub annotations, and static completion.
 
 ### Compatibility
 
-- [`compatibility.md`](compatibility.md) — the human-readable compatibility
-  contract: what compatibility means (observable semantics, not output-text
-  identity), `.del`/`.ostw` as accepted source forms, support-matrix state
-  meanings, the Workshop-independent frontend vs. end-to-end boundary,
-  corpus/differential methodology, and the pinned upstream oracle.
-- [`support-matrix.toml`](support-matrix.toml) — the machine-readable declared
-  support surface (128 entries), validated mechanically on every CI run
-  (`tests/matrix.rs` and `del-rs support --check`). **Source of truth** for
-  what is supported.
-- [`inventory.md`](inventory.md) — the declared language/compiler surface
-  inventoried from the pinned upstream with per-feature evidence
-  (`path@commit`, wiki pages).
-- [`syntax-notes.md`](syntax-notes.md) — precise lexical/grammar observations
-  from the pinned upstream (comment kinds, token set, keywords, number forms,
-  strings, grammar details).
-- [`limitations.md`](limitations.md) — evergreen support-boundary document:
-  lowering-dependent vs. intentionally unsupported capabilities, and
-  evidence-backed approximation areas.
-- [`provenance.md`](provenance.md) — pinned upstream oracle identity, license
-  guardrails for the corpus, and the re-pinning procedure.
-- [`workshop-conformance.md`](workshop-conformance.md) — evidence report
-  schema and the integration boundary with canonical `workshop-rs` feature
-  identities.
-- The DEL-owned source/provenance bridge is documented in
-  [`architecture.md`](architecture.md) §6.1 and independently exercised by
-  `tests/workshop_source.rs`.
+- [`compatibility.md`](compatibility.md) — observable-semantic compatibility
+  contract, accepted source forms, support-state meanings, and the distinction
+  between Workshop-independent semantic support and end-to-end Workshop
+  support.
+- [`support-matrix.toml`](support-matrix.toml) — machine-readable declared
+  support surface, validated by tests and `del-rs support --check`. This is the
+  source of truth for current feature states.
+- [`inventory.md`](inventory.md) — declared language/compiler surface with
+  per-feature evidence.
+- [`syntax-notes.md`](syntax-notes.md) — lexical/grammar observations from the
+  pinned reference.
+- [`limitations.md`](limitations.md) — evergreen supported/unsupported and
+  lowering-dependent boundaries.
+- [`provenance.md`](provenance.md) — pinned upstream identity, licensing
+  guardrails, and re-pinning procedure.
+- [`workshop-conformance.md`](workshop-conformance.md) — evidence/report
+  integration with canonical `workshop-rs` feature identities.
 
-### Interfaces
+### Interfaces and decisions
 
-- CLI contract: task-oriented commands, flags, exit codes, output boundaries,
-  migration aliases, and static completion are documented in [`cli.md`](cli.md);
-  the binary prints its own structured help via `del-rs --help`.
-- Library API: the stable surface (`parse`, project loading, semantic/HIR
-  queries, oracle, matrix) is documented in [`architecture.md`](architecture.md)
-  §17 and exercised in the `tests/` integration suites.
+- Library and CLI surfaces are described by [`architecture.md`](architecture.md)
+  and [`cli.md`](cli.md), and exercised by the integration tests.
+- [`decisions.md`](decisions.md) records ratified product/semantic decisions.
+  Historical decisions do not redefine the repository as a Wright-owned
+  provider/frontend.
 
-### Decisions
+## Development and testing
 
-- [`decisions.md`](decisions.md) — PM ratifications for architecture
-  questions Q1–Q16 (2026-08-16): binding product decisions with upstream
-  evidence. Where a ratification corrected a claim in `architecture.md`
-  (Q3 import extension, Q14 auto-for, Q16 number forms), the correction is
-  applied in the architecture text.
+The repository test suites cover parsing, semantics, advanced language
+features, HIR/oracle behavior, corpus/project evidence, support-matrix
+validation, CLI contracts, and Workshop integration. Run the repository's
+current validation gates from `AGENTS.md`.
 
-### Development and testing
-
-- Test targets (all auto-discovered by `cargo test`):
-  `tests/parse.rs` (lexer/parser), `tests/semantic.rs` (semantics),
-  `tests/advanced.rs` (advanced semantics), `tests/hir.rs` (HIR lowering +
-  validation + oracle), `tests/corpus.rs` (corpus harness + evidence report +
-  project fixtures), `tests/matrix.rs` (matrix mechanical validation),
-  `tests/cli.rs` (CLI black-box contracts).
-- Corpus fixtures live under `tests/corpus/` with `// source` / `// license`
-  / `// expect` headers. Evidence, gap, and matrix-link directives are
-  documented in [`workshop-conformance.md`](workshop-conformance.md).
-- CI (`.github/workflows/ci.yml`) runs `cargo build --all-targets`,
-  `cargo test --all-targets`, the matrix gate, and the corpus harness.
+Real-project support claims require full-project evidence in addition to
+focused tests. Fixed test counts are not a substitute for behavioral coverage.
 
 ## Authority
 
 | Contract | Document | Normative scope |
 | --- | --- | --- |
-| Architecture | [`architecture.md`](architecture.md) | Module responsibilities, data flow, provider/HIR seams. |
+| Repository/product role | [`implementation-role.md`](implementation-role.md) | Standalone implementation identity and cross-repo ownership. |
+| Internal architecture | [`architecture.md`](architecture.md) | Source/frontend/HIR/runtime/lowering organization. |
 | Compatibility | [`compatibility.md`](compatibility.md) | State meanings, methodology, oracle boundary. |
-| Declared surface | [`support-matrix.toml`](support-matrix.toml) | Per-capability support states with evidence. |
-| Product decisions | [`decisions.md`](decisions.md) | Ratified Q1–Q16 answers (binding). |
+| Declared surface | [`support-matrix.toml`](support-matrix.toml) | Per-capability current support states with evidence. |
+| Product decisions | [`decisions.md`](decisions.md) | Ratified semantic/product decisions. |
 | Provenance | [`provenance.md`](provenance.md) | Oracle pin, licensing, re-pinning. |
