@@ -354,11 +354,14 @@ rule: "dynamic-switch" Event.OngoingGlobal {
 "#,
     );
     assert!(program.rules.is_empty());
-    assert!(diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "HI018"
-            && diagnostic.message.contains("single-evaluation")
-            && diagnostic.message.contains("runtime materialization")
-    }), "{diagnostics:?}");
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "HI018"
+                && diagnostic.message.contains("single-evaluation")
+                && diagnostic.message.contains("runtime materialization")
+        }),
+        "{diagnostics:?}"
+    );
 }
 
 #[test]
@@ -433,4 +436,60 @@ fn cross_file_lowering_preserves_source_provenance() {
         .get(rule.actions[0])
         .expect("library action");
     assert_eq!(action.span().expect("action provenance").file.index(), 1);
+}
+
+#[test]
+fn chase_and_stop_aliases_lower_to_canonical_variable_calls() {
+    let (program, diagnostics) = lower(
+        r#"
+globalvar Number target;
+playervar Number playerTarget;
+rule: "global" Event.OngoingGlobal {
+    ChaseVariableAtRate(target, 1, 1, RateChaseReevaluation.DestinationAndRate);
+    StopChasingVariable(target);
+}
+rule: "player" Event.OngoingPlayer {
+    ChaseVariableAtRate(playerTarget, 1, 1, RateChaseReevaluation.DestinationAndRate);
+    StopChasingVariable(playerTarget);
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    program.validate().expect("structurally valid WIR");
+    for (rule_name, expected_target) in [("global", "global"), ("player", "player")] {
+        let rule = program
+            .rules
+            .iter()
+            .find(|rule| rule.name == rule_name)
+            .expect("variable chase rule");
+        assert_eq!(rule.actions.len(), 2);
+        for (action_id, expected_name) in rule
+            .actions
+            .iter()
+            .zip(["chaseAtRate", "stopChasingVariable"])
+        {
+            let workshop_rs::wir::Action::Call { name, args, .. } =
+                program.actions.get(*action_id).unwrap()
+            else {
+                panic!("{rule_name} action must be a canonical call")
+            };
+            assert_eq!(name, expected_name);
+            match (expected_target, &program.values.get(args[0]).unwrap().value) {
+                ("global", workshop_rs::wir::Value::GlobalVariable(variable)) => {
+                    assert_eq!(*variable, workshop_rs::wir::GlobalVarId::from_index(0));
+                }
+                ("player", workshop_rs::wir::Value::PlayerVariable { player, variable }) => {
+                    assert!(matches!(
+                        program.values.get(*player).unwrap().value,
+                        workshop_rs::wir::Value::EventPlayer
+                    ));
+                    assert_eq!(*variable, workshop_rs::wir::PlayerVarId::from_index(0));
+                }
+                _ => panic!("{rule_name} action has the wrong canonical target"),
+            }
+        }
+    }
 }
