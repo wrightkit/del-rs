@@ -175,6 +175,11 @@ impl<'a> Lowerer<'a> {
                     ret: Type::Any,
                     body: None,
                     is_recursive: f.attrs.recursive,
+                    is_player_context: f
+                        .attrs
+                        .subroutine
+                        .as_ref()
+                        .is_some_and(|subroutine| subroutine.playervar),
                     is_virtual: f.attrs.virtual_,
                     captures: Vec::new(),
                     class: None,
@@ -246,7 +251,11 @@ impl<'a> Lowerer<'a> {
                 }
             }
             ItemKind::Function(f) => {
-                let Some(fid) = self.program.function_symbol_of(f.name.id).and_then(|s| self.symbol_func.get(&s).copied()) else {
+                let Some(fid) = self
+                    .program
+                    .function_symbol_of(f.name.id)
+                    .and_then(|s| self.symbol_func.get(&s).copied())
+                else {
                     return;
                 };
                 let params: Vec<HirParam> = f
@@ -276,9 +285,7 @@ impl<'a> Lowerer<'a> {
                             stmts: vec![HirStmt {
                                 id: self.next_stmt,
                                 span: e.span,
-                                kind: HirStmtKind::Return {
-                                    value: Some(value),
-                                },
+                                kind: HirStmtKind::Return { value: Some(value) },
                             }],
                         })
                     }
@@ -297,13 +304,18 @@ impl<'a> Lowerer<'a> {
             }
             ItemKind::TypeDecl(t) => {
                 if t.kind == TypeDeclKind::Enum {
-                    let Some(eid) = self.program.type_symbol_of(t.name.id).and_then(|s| self.symbol_enum.get(&s).copied()) else {
+                    let Some(eid) = self
+                        .program
+                        .type_symbol_of(t.name.id)
+                        .and_then(|s| self.symbol_enum.get(&s).copied())
+                    else {
                         return;
                     };
                     let mut idx = 0usize;
                     for m in &t.members {
                         if let MemberDeclKind::EnumMember(e) = &m.kind {
-                            let fields: Vec<Type> = e.fields.iter().map(|ft| self.sem_type(ft)).collect();
+                            let fields: Vec<Type> =
+                                e.fields.iter().map(|ft| self.sem_type(ft)).collect();
                             let disc = e.discriminant.as_ref().map(|d| self.expr(d));
                             self.hir.enums[eid as usize].members[idx].discriminant = disc;
                             self.hir.enums[eid as usize].members[idx].fields = fields;
@@ -311,7 +323,11 @@ impl<'a> Lowerer<'a> {
                         }
                     }
                 } else {
-                    let Some(cid) = self.program.type_symbol_of(t.name.id).and_then(|s| self.symbol_class.get(&s).copied()) else {
+                    let Some(cid) = self
+                        .program
+                        .type_symbol_of(t.name.id)
+                        .and_then(|s| self.symbol_class.get(&s).copied())
+                    else {
                         return;
                     };
                     // Base.
@@ -338,7 +354,11 @@ impl<'a> Lowerer<'a> {
                     // Methods.
                     for m in &t.members {
                         if let MemberDeclKind::Method(f) = &m.kind {
-                            let Some(fid) = self.program.function_symbol_of(f.name.id).and_then(|s| self.symbol_func.get(&s).copied()) else {
+                            let Some(fid) = self
+                                .program
+                                .function_symbol_of(f.name.id)
+                                .and_then(|s| self.symbol_func.get(&s).copied())
+                            else {
                                 continue;
                             };
                             self.lower_method(f, fid, cid);
@@ -530,7 +550,8 @@ impl<'a> Lowerer<'a> {
                             let var = if let Some(v) = self.local_vars.get(&v.name.id) {
                                 *v
                             } else {
-                                let vid = self.fresh_local(&v.name.name, self.ty(v.name.id), v.name.span);
+                                let vid =
+                                    self.fresh_local(&v.name.name, self.ty(v.name.id), v.name.span);
                                 self.local_vars.insert(v.name.id, vid);
                                 vid
                             };
@@ -545,7 +566,10 @@ impl<'a> Lowerer<'a> {
                             kind: ExprKind::Assign { target, value, .. },
                             ..
                         })) => (self.target_var(target), self.expr(value)),
-                        _ => (self.fresh_local("auto", Type::Any, s.span), self.null_expr(s.span)),
+                        _ => (
+                            self.fresh_local("auto", Type::Any, s.span),
+                            self.null_expr(s.span),
+                        ),
                     };
                     let end = f
                         .cond
@@ -567,12 +591,19 @@ impl<'a> Lowerer<'a> {
                     HirStmtKind::For {
                         init: f.init.as_ref().map(|i| Box::new(self.lower_stmt_owned(i))),
                         cond: f.cond.as_ref().map(|c| self.expr(c)),
-                        step: f.step.as_ref().map(|st| Box::new(self.lower_stmt_owned(st))),
+                        step: f
+                            .step
+                            .as_ref()
+                            .map(|st| Box::new(self.lower_stmt_owned(st))),
                         body: Box::new(self.lower_stmt_owned(&f.body)),
                     }
                 }
             }
-            StmtKind::Foreach { var, collection, body } => {
+            StmtKind::Foreach {
+                var,
+                collection,
+                body,
+            } => {
                 let var_id = if let Some(v) = self.local_vars.get(&var.name.id) {
                     *v
                 } else {
@@ -685,12 +716,21 @@ impl<'a> Lowerer<'a> {
             ExprKind::Null => HirExprKind::Literal(LiteralValue::Null),
             ExprKind::Ident(_) => {
                 if self.ident_name(e) == "cam" && std::env::var("DEL_DEBUG").is_ok() {
-                    eprintln!("cam node {} res {:?} local_vars contains decl: {}", e.id.0,
+                    eprintln!(
+                        "cam node {} res {:?} local_vars contains decl: {}",
+                        e.id.0,
                         self.program.resolution.get(&e.id),
-                        self.program.resolution.get(&e.id).map(|r| match r {
-                            Resolution::Symbol(s) => self.local_vars.contains_key(&self.program.tables.symbol(*s).decl),
-                            _ => false,
-                        }).unwrap_or(false));
+                        self.program
+                            .resolution
+                            .get(&e.id)
+                            .map(|r| match r {
+                                Resolution::Symbol(s) => self
+                                    .local_vars
+                                    .contains_key(&self.program.tables.symbol(*s).decl),
+                                _ => false,
+                            })
+                            .unwrap_or(false)
+                    );
                 }
                 if let Some(Resolution::Symbol(sid)) = self.program.resolution.get(&e.id) {
                     if let Some(vid) = self.symbol_var.get(&sid) {
@@ -712,7 +752,10 @@ impl<'a> Lowerer<'a> {
                 }
             }
             ExprKind::Member { base, name } => {
-                if matches!(self.program.resolution.get(&e.id), Some(Resolution::External(_))) {
+                if matches!(
+                    self.program.resolution.get(&e.id),
+                    Some(Resolution::External(_))
+                ) {
                     HirExprKind::External {
                         name: name.name.clone(),
                         namespace: self.member_namespace(base),
@@ -850,26 +893,24 @@ impl<'a> Lowerer<'a> {
                 }
                 HirMemberTarget::Invoke
             }
-            Some(Resolution::BuiltinMember(bm)) => {
-                HirMemberTarget::ArrayMember(match bm {
-                    BuiltinMember::ArrayLength => BuiltinArrayMember::Length,
-                    BuiltinMember::ArrayIndexOf => BuiltinArrayMember::IndexOf,
-                    BuiltinMember::ArrayFirst => BuiltinArrayMember::First,
-                    BuiltinMember::ArrayLast => BuiltinArrayMember::Last,
-                    BuiltinMember::ArrayMap => BuiltinArrayMember::Map,
-                    BuiltinMember::ArrayFilteredArray => BuiltinArrayMember::FilteredArray,
-                    BuiltinMember::ArrayRandom => BuiltinArrayMember::Random,
-                    BuiltinMember::ArrayModAppend => BuiltinArrayMember::ModAppend,
-                    BuiltinMember::ArrayModRemoveByIndex => BuiltinArrayMember::ModRemoveByIndex,
-                    BuiltinMember::ArrayAppend => BuiltinArrayMember::Append,
-                    BuiltinMember::ArrayContains => BuiltinArrayMember::Contains,
-                    BuiltinMember::ArraySortedArray => BuiltinArrayMember::SortedArray,
-                    BuiltinMember::ArrayIsTrueForAll => BuiltinArrayMember::IsTrueForAll,
-                    BuiltinMember::ArrayIsTrueForAny => BuiltinArrayMember::IsTrueForAny,
-                    BuiltinMember::Key => return HirMemberTarget::Key,
-                    BuiltinMember::Invoke => return HirMemberTarget::Invoke,
-                })
-            }
+            Some(Resolution::BuiltinMember(bm)) => HirMemberTarget::ArrayMember(match bm {
+                BuiltinMember::ArrayLength => BuiltinArrayMember::Length,
+                BuiltinMember::ArrayIndexOf => BuiltinArrayMember::IndexOf,
+                BuiltinMember::ArrayFirst => BuiltinArrayMember::First,
+                BuiltinMember::ArrayLast => BuiltinArrayMember::Last,
+                BuiltinMember::ArrayMap => BuiltinArrayMember::Map,
+                BuiltinMember::ArrayFilteredArray => BuiltinArrayMember::FilteredArray,
+                BuiltinMember::ArrayRandom => BuiltinArrayMember::Random,
+                BuiltinMember::ArrayModAppend => BuiltinArrayMember::ModAppend,
+                BuiltinMember::ArrayModRemoveByIndex => BuiltinArrayMember::ModRemoveByIndex,
+                BuiltinMember::ArrayAppend => BuiltinArrayMember::Append,
+                BuiltinMember::ArrayContains => BuiltinArrayMember::Contains,
+                BuiltinMember::ArraySortedArray => BuiltinArrayMember::SortedArray,
+                BuiltinMember::ArrayIsTrueForAll => BuiltinArrayMember::IsTrueForAll,
+                BuiltinMember::ArrayIsTrueForAny => BuiltinArrayMember::IsTrueForAny,
+                BuiltinMember::Key => return HirMemberTarget::Key,
+                BuiltinMember::Invoke => return HirMemberTarget::Invoke,
+            }),
             Some(Resolution::PlayervarAccess(sid)) => {
                 if let Some(vid) = self.symbol_var.get(&sid) {
                     HirMemberTarget::PlayervarAccess(*vid)
@@ -955,7 +996,9 @@ impl<'a> Lowerer<'a> {
                             BuiltinMember::ArrayFilteredArray => BuiltinArrayMember::FilteredArray,
                             BuiltinMember::ArrayRandom => BuiltinArrayMember::Random,
                             BuiltinMember::ArrayModAppend => BuiltinArrayMember::ModAppend,
-                            BuiltinMember::ArrayModRemoveByIndex => BuiltinArrayMember::ModRemoveByIndex,
+                            BuiltinMember::ArrayModRemoveByIndex => {
+                                BuiltinArrayMember::ModRemoveByIndex
+                            }
                             BuiltinMember::ArrayAppend => BuiltinArrayMember::Append,
                             BuiltinMember::ArrayContains => BuiltinArrayMember::Contains,
                             BuiltinMember::ArraySortedArray => BuiltinArrayMember::SortedArray,
@@ -1082,6 +1125,7 @@ impl<'a> Lowerer<'a> {
             ret: Type::Any,
             body,
             is_recursive: false,
+            is_player_context: false,
             is_virtual: false,
             captures: Vec::new(),
             class: None,
@@ -1092,23 +1136,25 @@ impl<'a> Lowerer<'a> {
 
     fn sem_type(&mut self, t: &TypeRef) -> Type {
         match &t.kind {
-            TypeRefKind::Name(id) => crate::semantic::types::primitive(&id.name).unwrap_or_else(|| {
-                if let Some(alias) = self.program.aliases.get(&id.name) {
-                    alias.clone()
-                } else if let Some(sym) = self.program.lookup_type_symbol(&id.name) {
-                    match self.program.tables.symbol(sym).kind {
-                        SymbolKind::Class => Type::Class(sym),
-                        SymbolKind::Struct => Type::Struct(sym),
-                        SymbolKind::Enum => Type::Enum(sym),
-                        _ => Type::Any,
+            TypeRefKind::Name(id) => {
+                crate::semantic::types::primitive(&id.name).unwrap_or_else(|| {
+                    if let Some(alias) = self.program.aliases.get(&id.name) {
+                        alias.clone()
+                    } else if let Some(sym) = self.program.lookup_type_symbol(&id.name) {
+                        match self.program.tables.symbol(sym).kind {
+                            SymbolKind::Class => Type::Class(sym),
+                            SymbolKind::Struct => Type::Struct(sym),
+                            SymbolKind::Enum => Type::Enum(sym),
+                            _ => Type::Any,
+                        }
+                    } else {
+                        Type::External(crate::semantic::types::ExternalType {
+                            category: crate::semantic::provider::ExternalCategory::AnyLike,
+                            constant: false,
+                        })
                     }
-                } else {
-                    Type::External(crate::semantic::types::ExternalType {
-                        category: crate::semantic::provider::ExternalCategory::AnyLike,
-                        constant: false,
-                    })
-                }
-            }),
+                })
+            }
             TypeRefKind::Array(inner) => Type::Array(Box::new(self.sem_type(inner))),
             TypeRefKind::GenericInstantiation { name, args } => {
                 let def = self.program.lookup_type_symbol(&name.name);
@@ -1120,11 +1166,13 @@ impl<'a> Lowerer<'a> {
                     None => Type::Any,
                 }
             }
-            TypeRefKind::Function(ft) => Type::FunctionValue(crate::semantic::types::FunctionType {
-                params: ft.params.iter().map(|p| self.sem_type(p)).collect(),
-                ret: Box::new(self.sem_type(&ft.ret)),
-                constant: ft.const_,
-            }),
+            TypeRefKind::Function(ft) => {
+                Type::FunctionValue(crate::semantic::types::FunctionType {
+                    params: ft.params.iter().map(|p| self.sem_type(p)).collect(),
+                    ret: Box::new(self.sem_type(&ft.ret)),
+                    constant: ft.const_,
+                })
+            }
             TypeRefKind::Union(ms) => Type::Union(ms.iter().map(|m| self.sem_type(m)).collect()),
             TypeRefKind::Error => Type::Error,
         }

@@ -38,6 +38,12 @@ plus a short list of evidence-backed approximation areas.
   references (including pure conversion wrappers); calls, random/dynamic
   values, and other unstable expressions fail closed with `HI018` until
   runtime materialization is owned by the appropriate runtime work.
+- Parameterized subroutine lowering has a deliberately bounded #31 slice:
+  only direct calls from global Workshop rules to non-recursive, non-player,
+  `void` subroutines with scalar value parameters are materialized into
+  generated global parameter slots. Player-context, nested/re-entrant,
+  recursive, return-value, `in`/`ref`, array/object/struct, function-value, and
+  side-effectful argument cases fail closed with `HI018`.
 
 ## Intentionally unsupported
 

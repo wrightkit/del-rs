@@ -60,6 +60,10 @@ pub struct HirFunc {
     pub ret: Type,
     pub body: Option<HirBlock>,
     pub is_recursive: bool,
+    /// Whether a subroutine executes in Workshop player context. This is
+    /// semantic execution intent; concrete runtime storage remains a
+    /// lowering concern.
+    pub is_player_context: bool,
     pub is_virtual: bool,
     pub captures: Vec<HirCapture>,
     pub class: Option<HirClassId>,
@@ -196,7 +200,9 @@ pub struct HirExpr {
 #[derive(Clone, Debug)]
 pub enum HirExprKind {
     Literal(LiteralValue),
-    VarRef { var: HirVarId },
+    VarRef {
+        var: HirVarId,
+    },
     Member {
         base: HirExprId,
         member: HirMemberTarget,
@@ -237,7 +243,9 @@ pub enum HirExprKind {
         operand: HirExprId,
         op: crate::syntax::ast::PostfixOp,
     },
-    FunctionValue { func: HirFuncId },
+    FunctionValue {
+        func: HirFuncId,
+    },
     New {
         class: HirClassId,
         args: Vec<HirArg>,
@@ -246,7 +254,9 @@ pub enum HirExprKind {
         expr: HirExprId,
         to: Type,
     },
-    ArrayLit { elems: Vec<HirExprId> },
+    ArrayLit {
+        elems: Vec<HirExprId>,
+    },
     StructLit {
         fields: Vec<(HirFieldId, HirExprId)>,
         base: Option<HirExprId>,
@@ -264,7 +274,9 @@ pub enum HirExprKind {
         kind: crate::syntax::ast::AsyncKind,
         call: HirExprId,
     },
-    This { class: HirClassId },
+    This {
+        class: HirClassId,
+    },
     External {
         name: String,
         namespace: Vec<String>,
@@ -334,7 +346,10 @@ pub struct HirStmt {
 #[derive(Clone, Debug)]
 pub enum HirStmtKind {
     Block(HirBlock),
-    VarDecl { var: HirVarId, init: Option<HirExprId> },
+    VarDecl {
+        var: HirVarId,
+        init: Option<HirExprId>,
+    },
     Assign {
         target: HirExprId,
         op: crate::syntax::ast::AssignOp,
@@ -346,7 +361,10 @@ pub enum HirStmtKind {
         then: Box<HirStmt>,
         els: Option<Box<HirStmt>>,
     },
-    While { cond: HirExprId, body: Box<HirStmt> },
+    While {
+        cond: HirExprId,
+        body: Box<HirStmt>,
+    },
     For {
         init: Option<Box<HirStmt>>,
         cond: Option<HirExprId>,
@@ -360,16 +378,27 @@ pub enum HirStmtKind {
         step: HirExprId,
         body: Box<HirStmt>,
     },
-    Foreach { var: HirVarId, collection: HirExprId, body: Box<HirStmt> },
+    Foreach {
+        var: HirVarId,
+        collection: HirExprId,
+        body: Box<HirStmt>,
+    },
     Switch {
         scrutinee: HirExprId,
         arms: Vec<HirSwitchArm>,
     },
-    Return { value: Option<HirExprId> },
+    Return {
+        value: Option<HirExprId>,
+    },
     Break,
     Continue,
-    Delete { target: HirExprId },
-    Hook { target: HirExprId, value: HirExprId },
+    Delete {
+        target: HirExprId,
+    },
+    Hook {
+        target: HirExprId,
+        value: HirExprId,
+    },
     Error,
 }
 

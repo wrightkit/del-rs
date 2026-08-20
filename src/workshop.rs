@@ -6,12 +6,13 @@
 
 use crate::diagnostics::{error, Diagnostic, Phase};
 use crate::hir::{
-    CallTarget, HirArg, HirExprId, HirExprKind, HirFuncId, HirProgram, HirStmt, HirStmtKind,
-    HirVarId, LiteralValue, StorageIntent,
+    CallTarget, HirArg, HirExpr, HirExprId, HirExprKind, HirFuncId, HirProgram, HirStmt,
+    HirStmtKind, HirVarId, LiteralValue, StorageIntent,
 };
 use crate::project::Project;
 use crate::semantic::provider::{ExternalBinding, ExternalParam};
 use crate::semantic::resolve::Resolution;
+use crate::semantic::types::Type;
 use crate::semantic::SemanticProgram;
 use crate::span::{FileId, SourceMap, Span};
 use crate::syntax::ast::{
@@ -394,6 +395,7 @@ struct Lowerer<'a> {
     out: wir::Program,
     global_vars: HashMap<HirVarId, wir::GlobalVarId>,
     player_vars: HashMap<HirVarId, wir::PlayerVarId>,
+    parameter_slots: HashMap<HirVarId, wir::GlobalVarId>,
     subroutines: HashMap<HirFuncId, wir::SubroutineId>,
     diagnostics: Vec<Diagnostic>,
     used_global_indices: HashSet<u32>,
@@ -418,6 +420,7 @@ impl<'a> Lowerer<'a> {
             out,
             global_vars: HashMap::new(),
             player_vars: HashMap::new(),
+            parameter_slots: HashMap::new(),
             subroutines: HashMap::new(),
             diagnostics: Vec::new(),
             used_global_indices: HashSet::new(),
@@ -428,6 +431,7 @@ impl<'a> Lowerer<'a> {
     fn run(mut self) -> (wir::Program, Vec<Diagnostic>) {
         self.allocate_variables();
         self.allocate_subroutines();
+        self.allocate_parameter_slots();
         self.lower_initializers();
         for rule in &self.hir.rules {
             self.lower_rule(rule);
@@ -442,6 +446,39 @@ impl<'a> Lowerer<'a> {
             return (wir::Program::default(), self.diagnostics);
         }
         (self.out, self.diagnostics)
+    }
+
+    fn allocate_parameter_slots(&mut self) {
+        for (fid, func) in self.hir.funcs.iter().enumerate() {
+            if func.kind != crate::hir::FuncKind::Subroutine {
+                continue;
+            }
+            for (param_index, param) in func.params.iter().enumerate() {
+                let Some(var) = self
+                    .hir
+                    .param_vars
+                    .get(&(fid as HirFuncId, param.name.clone()))
+                    .copied()
+                else {
+                    self.unsupported(
+                        param.span,
+                        format!(
+                            "subroutine parameter '{}' has no HIR variable binding",
+                            param.name
+                        ),
+                    );
+                    continue;
+                };
+                let index = self.allocate_index(None, false, param.span);
+                let wir_id = self.out.global_variables.push(wir::WorkshopVariable {
+                    name: format!("__del_param_f{fid}_p{param_index}"),
+                    index,
+                    span: self.ws_span(param.span),
+                    name_span: self.ws_span(param.span),
+                });
+                self.parameter_slots.insert(var, wir_id);
+            }
+        }
     }
 
     fn allocate_variables(&mut self) {
@@ -468,8 +505,19 @@ impl<'a> Lowerer<'a> {
                     });
                     self.player_vars.insert(id, wir_id);
                 }
-                StorageIntent::Local
-                | StorageIntent::Member
+                StorageIntent::Local => {
+                    let is_parameter = self.hir.param_vars.values().any(|parameter| *parameter == id);
+                    if !is_parameter {
+                        self.unsupported(
+                            var.span,
+                            format!(
+                                "variable '{}' has storage intent {:?} without a core Workshop WIR representation",
+                                var.name, var.storage
+                            ),
+                        );
+                    }
+                }
+                StorageIntent::Member
                 | StorageIntent::StaticMember
                 | StorageIntent::Parameter
                 | StorageIntent::External => self.unsupported(
@@ -640,13 +688,16 @@ impl<'a> Lowerer<'a> {
             }
             return;
         };
+        if !self.validate_rule_subroutine_calls(rule, &event) {
+            return;
+        }
         let mut conditions = Vec::new();
         for condition in &rule.conditions {
             if let Ok(value) = self.lower_value(condition.expr) {
                 conditions.push(value);
             }
         }
-        let actions = self.lower_actions(&rule.body);
+        let actions = self.lower_rule_actions(&rule.body);
         if self.has_new_errors(diagnostic_count) {
             return;
         }
@@ -669,6 +720,9 @@ impl<'a> Lowerer<'a> {
             self.unsupported(func.span, format!("subroutine '{}' has no body", func.name));
             return;
         };
+        if !self.validate_subroutine(fid, func) {
+            return;
+        }
         let diagnostic_count = self.diagnostics.len();
         let actions = self.lower_actions(body);
         if self.has_new_errors(diagnostic_count) {
@@ -754,6 +808,333 @@ impl<'a> Lowerer<'a> {
             actions.extend(self.lower_stmt(stmt));
         }
         actions
+    }
+
+    fn lower_rule_actions(&mut self, block: &crate::hir::HirBlock) -> Vec<wir::ActionId> {
+        let mut actions = Vec::new();
+        for stmt in &block.stmts {
+            match &stmt.kind {
+                HirStmtKind::Block(inner) => actions.extend(self.lower_rule_actions(inner)),
+                _ => {
+                    if let Some(expr) = self.direct_subroutine_call(stmt) {
+                        actions.extend(self.lower_direct_subroutine_call(expr));
+                    } else {
+                        actions.extend(self.lower_stmt(stmt));
+                    }
+                }
+            }
+        }
+        actions
+    }
+
+    fn direct_subroutine_call(&self, stmt: &HirStmt) -> Option<HirExprId> {
+        let HirStmtKind::Expr(expr) = stmt.kind else {
+            return None;
+        };
+        let Some(HirExpr {
+            kind:
+                HirExprKind::Call {
+                    target: CallTarget::Func(_),
+                    args,
+                },
+            ..
+        }) = self.hir.expr(expr)
+        else {
+            return None;
+        };
+        (!args.is_empty()).then_some(expr)
+    }
+
+    fn validate_rule_subroutine_calls(
+        &mut self,
+        rule: &crate::hir::HirRule,
+        event: &wir::Event,
+    ) -> bool {
+        let mut calls = Vec::new();
+        self.collect_direct_subroutine_calls(&rule.body, &mut calls);
+        if calls.is_empty() {
+            return true;
+        }
+        if !matches!(event, wir::Event::Global) {
+            self.unsupported(
+                rule.span,
+                "parameter-runtime subroutine calls require a global Workshop rule",
+            );
+            return false;
+        }
+        let mut valid = true;
+        for expr in calls {
+            let Some(HirExprKind::Call {
+                target: CallTarget::Func(fid),
+                ..
+            }) = self.hir.expr(expr).map(|expr| &expr.kind)
+            else {
+                continue;
+            };
+            let Some(func) = self.hir.funcs.get(*fid as usize).cloned() else {
+                self.unsupported(
+                    rule.span,
+                    format!("call targets unknown HIR function {fid}"),
+                );
+                valid = false;
+                continue;
+            };
+            valid &= self.validate_subroutine(*fid, &func);
+        }
+        valid
+    }
+
+    fn collect_direct_subroutine_calls(
+        &self,
+        block: &crate::hir::HirBlock,
+        calls: &mut Vec<HirExprId>,
+    ) {
+        for stmt in &block.stmts {
+            if let HirStmtKind::Block(inner) = &stmt.kind {
+                self.collect_direct_subroutine_calls(inner, calls);
+            } else if let Some(expr) = self.direct_subroutine_call(stmt) {
+                calls.push(expr);
+            }
+        }
+    }
+
+    fn validate_subroutine(&mut self, _fid: HirFuncId, func: &crate::hir::HirFunc) -> bool {
+        if func.params.is_empty() {
+            return true;
+        }
+        let mut valid = true;
+        if func.kind != crate::hir::FuncKind::Subroutine {
+            self.unsupported(
+                func.span,
+                "parameter-runtime calls target a non-subroutine function",
+            );
+            valid = false;
+        }
+        if func.ret != Type::Void {
+            self.unsupported(func.span, "parameter-runtime subroutines must return void");
+            valid = false;
+        }
+        if func.is_recursive || func.is_player_context {
+            self.unsupported(
+                func.span,
+                "parameter-runtime subroutines must be non-recursive and global-context",
+            );
+            valid = false;
+        }
+        for param in &func.params {
+            if param.mode != crate::syntax::ast::ParamMode::Value
+                || !Self::is_scalar_type(&param.ty)
+            {
+                self.unsupported(
+                    param.span,
+                    "parameter-runtime subroutines require scalar value parameters",
+                );
+                valid = false;
+            }
+        }
+        if func
+            .body
+            .as_ref()
+            .is_some_and(|body| self.block_contains_function_call(body))
+        {
+            self.unsupported(
+                func.span,
+                "parameter-runtime subroutines cannot contain nested subroutine calls",
+            );
+            valid = false;
+        }
+        valid
+    }
+
+    fn is_scalar_type(ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Number | Type::String | Type::Bool | Type::Null | Type::Any
+        )
+    }
+
+    fn expr_is_scalar_argument(&self, id: HirExprId) -> bool {
+        let Some(expr) = self.hir.expr(id) else {
+            return false;
+        };
+        if !Self::is_scalar_type(&expr.ty) {
+            return false;
+        }
+        match &expr.kind {
+            HirExprKind::Literal(_) | HirExprKind::VarRef { .. } | HirExprKind::External { .. } => {
+                true
+            }
+            HirExprKind::Binary { lhs, rhs, .. } => {
+                self.expr_is_scalar_argument(*lhs) && self.expr_is_scalar_argument(*rhs)
+            }
+            HirExprKind::Unary { operand, .. }
+            | HirExprKind::Convert { from: operand, .. }
+            | HirExprKind::Cast { expr: operand, .. } => self.expr_is_scalar_argument(*operand),
+            HirExprKind::Ternary { cond, then, els } => {
+                self.expr_is_scalar_argument(*cond)
+                    && self.expr_is_scalar_argument(*then)
+                    && self.expr_is_scalar_argument(*els)
+            }
+            HirExprKind::Call { target, args } => {
+                matches!(target, CallTarget::External { .. })
+                    && args.iter().all(|arg| match arg {
+                        HirArg::Pos(value) | HirArg::Named { value, .. } => {
+                            self.expr_is_scalar_argument(*value)
+                        }
+                    })
+            }
+            _ => false,
+        }
+    }
+
+    fn block_contains_function_call(&self, block: &crate::hir::HirBlock) -> bool {
+        block
+            .stmts
+            .iter()
+            .any(|stmt| self.stmt_contains_function_call(stmt))
+    }
+
+    fn stmt_contains_function_call(&self, stmt: &HirStmt) -> bool {
+        match &stmt.kind {
+            HirStmtKind::VarDecl { init, .. } => {
+                init.is_some_and(|expr| self.expr_contains_function_call(expr))
+            }
+            HirStmtKind::Block(block) => self.block_contains_function_call(block),
+            HirStmtKind::If { cond, then, els } => {
+                self.expr_contains_function_call(*cond)
+                    || self.stmt_contains_function_call(then)
+                    || els
+                        .as_deref()
+                        .is_some_and(|stmt| self.stmt_contains_function_call(stmt))
+            }
+            HirStmtKind::While { cond, body } => {
+                self.expr_contains_function_call(*cond) || self.stmt_contains_function_call(body)
+            }
+            HirStmtKind::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                init.as_deref()
+                    .is_some_and(|stmt| self.stmt_contains_function_call(stmt))
+                    || cond.is_some_and(|expr| self.expr_contains_function_call(expr))
+                    || step
+                        .as_deref()
+                        .is_some_and(|stmt| self.stmt_contains_function_call(stmt))
+                    || self.stmt_contains_function_call(body)
+            }
+            HirStmtKind::AutoFor {
+                start,
+                end,
+                step,
+                body,
+                ..
+            } => {
+                self.expr_contains_function_call(*start)
+                    || self.expr_contains_function_call(*end)
+                    || self.expr_contains_function_call(*step)
+                    || self.stmt_contains_function_call(body)
+            }
+            HirStmtKind::Foreach {
+                collection, body, ..
+            } => {
+                self.expr_contains_function_call(*collection)
+                    || self.stmt_contains_function_call(body)
+            }
+            HirStmtKind::Switch { scrutinee, arms } => {
+                self.expr_contains_function_call(*scrutinee)
+                    || arms.iter().any(|arm| {
+                        arm.stmts
+                            .iter()
+                            .any(|stmt| self.stmt_contains_function_call(stmt))
+                    })
+            }
+            HirStmtKind::Assign { target, value, .. } => {
+                self.expr_contains_function_call(*target)
+                    || self.expr_contains_function_call(*value)
+            }
+            HirStmtKind::Expr(expr) => self.expr_contains_function_call(*expr),
+            HirStmtKind::Return { value } => {
+                value.is_some_and(|expr| self.expr_contains_function_call(expr))
+            }
+            HirStmtKind::Delete { target } => self.expr_contains_function_call(*target),
+            HirStmtKind::Hook { target, value } => {
+                self.expr_contains_function_call(*target)
+                    || self.expr_contains_function_call(*value)
+            }
+            HirStmtKind::Break | HirStmtKind::Continue | HirStmtKind::Error => false,
+        }
+    }
+
+    fn expr_contains_function_call(&self, id: HirExprId) -> bool {
+        let Some(expr) = self.hir.expr(id) else {
+            return false;
+        };
+        match &expr.kind {
+            HirExprKind::Call { target, args } => {
+                matches!(target, CallTarget::Func(_))
+                    || args.iter().any(|arg| match arg {
+                        HirArg::Pos(value) | HirArg::Named { value, .. } => {
+                            self.expr_contains_function_call(*value)
+                        }
+                    })
+            }
+            HirExprKind::Binary { lhs, rhs, .. }
+            | HirExprKind::Assign {
+                target: lhs,
+                value: rhs,
+                ..
+            }
+            | HirExprKind::Index {
+                base: lhs,
+                index: rhs,
+            } => self.expr_contains_function_call(*lhs) || self.expr_contains_function_call(*rhs),
+            HirExprKind::Unary { operand, .. }
+            | HirExprKind::Convert { from: operand, .. }
+            | HirExprKind::Cast { expr: operand, .. }
+            | HirExprKind::Postfix { operand, .. }
+            | HirExprKind::Async { call: operand, .. }
+            | HirExprKind::Member { base: operand, .. } => {
+                self.expr_contains_function_call(*operand)
+            }
+            HirExprKind::Ternary { cond, then, els } => {
+                self.expr_contains_function_call(*cond)
+                    || self.expr_contains_function_call(*then)
+                    || self.expr_contains_function_call(*els)
+            }
+            HirExprKind::ArrayLit { elems } => elems
+                .iter()
+                .any(|expr| self.expr_contains_function_call(*expr)),
+            HirExprKind::StructLit {
+                fields,
+                base,
+                single_value,
+            } => {
+                fields
+                    .iter()
+                    .any(|(_, expr)| self.expr_contains_function_call(*expr))
+                    || base.is_some_and(|expr| self.expr_contains_function_call(expr))
+                    || single_value.is_some_and(|expr| self.expr_contains_function_call(expr))
+            }
+            HirExprKind::New { args, .. } | HirExprKind::EnumCtor { args, .. } => {
+                args.iter().any(|arg| match arg {
+                    HirArg::Pos(value) | HirArg::Named { value, .. } => {
+                        self.expr_contains_function_call(*value)
+                    }
+                })
+            }
+            HirExprKind::StrInterp { args, .. } => args
+                .iter()
+                .any(|expr| self.expr_contains_function_call(*expr)),
+            HirExprKind::Literal(_)
+            | HirExprKind::VarRef { .. }
+            | HirExprKind::External { .. }
+            | HirExprKind::FunctionValue { .. }
+            | HirExprKind::This { .. }
+            | HirExprKind::Error => false,
+        }
     }
 
     fn lower_stmt(&mut self, stmt: &HirStmt) -> Vec<wir::ActionId> {
@@ -1137,15 +1518,18 @@ impl<'a> Lowerer<'a> {
         match (
             self.global_vars.get(&var).copied(),
             self.player_vars.get(&var).copied(),
+            self.parameter_slots.get(&var).copied(),
         ) {
-            (Some(variable), _) => vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
-                variable,
-                op: modify,
-                value,
-                span: self.ws_span(expr.span),
-                target_span,
-            })],
-            (None, Some(variable)) => {
+            (Some(variable), _, _) | (None, None, Some(variable)) => {
+                vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
+                    variable,
+                    op: modify,
+                    value,
+                    span: self.ws_span(expr.span),
+                    target_span,
+                })]
+            }
+            (None, Some(variable), None) => {
                 let player = self.out.values.push(wir::ValueNode::new(
                     wir::Value::EventPlayer,
                     self.ws_span(expr.span),
@@ -1231,9 +1615,7 @@ impl<'a> Lowerer<'a> {
                 self.global_vars.contains_key(var) || self.player_vars.contains_key(var)
             }
             Some(HirExprKind::Convert { from, .. })
-            | Some(HirExprKind::Cast { expr: from, .. }) => {
-                self.switch_scrutinee_is_stable(*from)
-            }
+            | Some(HirExprKind::Cast { expr: from, .. }) => self.switch_scrutinee_is_stable(*from),
             _ => false,
         }
     }
@@ -1290,7 +1672,14 @@ impl<'a> Lowerer<'a> {
                         span: self.ws_span(expr.span),
                     })]
                 }
-                CallTarget::Func(fid) => self.call_subroutine(fid, expr.span),
+                CallTarget::Func(fid) if args.is_empty() => self.call_subroutine(fid, expr.span),
+                CallTarget::Func(_) => {
+                    self.unsupported(
+                        expr.span,
+                        "parameterized subroutine calls are only supported as direct global-rule actions",
+                    );
+                    Vec::new()
+                }
                 _ => {
                     self.unsupported(
                         expr.span,
@@ -1322,6 +1711,132 @@ impl<'a> Lowerer<'a> {
         }
     }
 
+    fn lower_direct_subroutine_call(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
+        let Some(expr) = self.hir.expr(id).cloned() else {
+            self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
+            return Vec::new();
+        };
+        let HirExprKind::Call {
+            target: CallTarget::Func(fid),
+            args,
+        } = expr.kind
+        else {
+            self.unsupported(expr.span, "rule call is not a direct subroutine call");
+            return Vec::new();
+        };
+        let Some(func) = self.hir.funcs.get(fid as usize).cloned() else {
+            self.unsupported(
+                expr.span,
+                format!("call targets unknown HIR function {fid}"),
+            );
+            return Vec::new();
+        };
+        if !self.validate_subroutine(fid, &func) {
+            return Vec::new();
+        }
+        if args.len() != func.params.len() {
+            self.unsupported(
+                expr.span,
+                format!(
+                    "subroutine '{}' requires {} arguments, got {}",
+                    func.name,
+                    func.params.len(),
+                    args.len()
+                ),
+            );
+            return Vec::new();
+        }
+        let mut slots = vec![None; func.params.len()];
+        let mut source_order = Vec::with_capacity(args.len());
+        let mut next_positional = 0;
+        for arg in args {
+            let (index, value) = match arg {
+                HirArg::Pos(value) => {
+                    while next_positional < slots.len() && slots[next_positional].is_some() {
+                        next_positional += 1;
+                    }
+                    if next_positional >= slots.len() {
+                        self.unsupported(expr.span, "too many subroutine arguments");
+                        return Vec::new();
+                    }
+                    let index = next_positional;
+                    next_positional += 1;
+                    (index, value)
+                }
+                HirArg::Named { name, value } => {
+                    let Some(index) = func.params.iter().position(|param| param.name == name)
+                    else {
+                        self.unsupported(
+                            expr.span,
+                            format!("unknown subroutine parameter '{name}'"),
+                        );
+                        return Vec::new();
+                    };
+                    (index, value)
+                }
+            };
+            if slots[index].replace(value).is_some() {
+                self.unsupported(expr.span, "subroutine argument is specified more than once");
+                return Vec::new();
+            }
+            source_order.push((index, value));
+        }
+        if slots.iter().any(Option::is_none) {
+            self.unsupported(expr.span, "subroutine call is missing an argument");
+            return Vec::new();
+        }
+        let mut actions = Vec::with_capacity(source_order.len() + 1);
+        for (index, value) in source_order {
+            let param = &func.params[index];
+            let Some(var) = self.hir.param_vars.get(&(fid, param.name.clone())).copied() else {
+                self.unsupported(
+                    param.span,
+                    format!(
+                        "subroutine parameter '{}' has no HIR variable binding",
+                        param.name
+                    ),
+                );
+                return Vec::new();
+            };
+            let Some(variable) = self.parameter_slots.get(&var).copied() else {
+                self.unsupported(
+                    param.span,
+                    format!(
+                        "subroutine parameter '{}' has no synthetic global slot",
+                        param.name
+                    ),
+                );
+                return Vec::new();
+            };
+            if !self.expr_is_scalar_argument(value) {
+                self.unsupported(
+                    self.hir
+                        .expr(value)
+                        .map(|expr| expr.span)
+                        .unwrap_or(expr.span),
+                    "parameter-runtime arguments must be scalar, side-effect-free values",
+                );
+                return Vec::new();
+            }
+            let Ok(value_node) = self.lower_value(value) else {
+                return Vec::new();
+            };
+            let value_span = self
+                .hir
+                .expr(value)
+                .map(|value| value.span)
+                .unwrap_or(expr.span);
+            actions.push(self.out.actions.push(wir::Action::SetGlobalVariable {
+                variable,
+                value: value_node,
+                span: self.ws_span(value_span),
+                target_span: self.ws_span(param.span),
+            }));
+        }
+        actions.extend(self.call_subroutine(fid, expr.span));
+        actions
+    }
+
     fn lower_assignment(
         &mut self,
         target: HirExprId,
@@ -1349,8 +1864,9 @@ impl<'a> Lowerer<'a> {
         match (
             self.global_vars.get(&var).copied(),
             self.player_vars.get(&var).copied(),
+            self.parameter_slots.get(&var).copied(),
         ) {
-            (Some(variable), _) => {
+            (Some(variable), _, _) | (None, None, Some(variable)) => {
                 if let Some(op) = modify {
                     vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
                         variable,
@@ -1368,7 +1884,7 @@ impl<'a> Lowerer<'a> {
                     })]
                 }
             }
-            (None, Some(variable)) => {
+            (None, Some(variable), None) => {
                 let player = self.out.values.push(wir::ValueNode::new(
                     wir::Value::EventPlayer,
                     self.ws_span(span),
@@ -1591,6 +2107,8 @@ impl<'a> Lowerer<'a> {
                         .values
                         .push(wir::ValueNode::new(wir::Value::EventPlayer, span));
                     wir::Value::PlayerVariable { player, variable }
+                } else if let Some(variable) = self.parameter_slots.get(&var).copied() {
+                    wir::Value::GlobalVariable(variable)
                 } else {
                     self.unsupported(
                         expr.span,
