@@ -1449,9 +1449,6 @@ impl<'a> Checker<'a> {
 
     fn check_ident(&mut self, expr: &Expr, ident: &Ident) -> Type {
         let ids = self.program.tables.lookup(self.scope(), &ident.name);
-        if ident.name == "cam" && std::env::var("DEL_DEBUG").is_ok() {
-            eprintln!("check_ident cam node {} span {}..{} ids={} -> {:?}", expr.id.0, expr.span.start, expr.span.end, ids.len(), ids.first());
-        }
         if let Some(&first) = ids.first() {
             let ty = self.program.tables.symbol(first).ty.clone();
             self.record(expr, ty.clone(), Some(Resolution::Symbol(first)));
@@ -2374,15 +2371,6 @@ impl<'a> Checker<'a> {
                 .get(&target.id)
                 .map(|r| matches!(r, Resolution::PlayervarAccess(_)))
                 .unwrap_or(false),
-        }
-    }
-}
-
-impl Stmt {
-    fn stmts_len_debug(&self) -> usize {
-        match &self.kind {
-            StmtKind::Block(b) => b.stmts.len(),
-            _ => 1,
         }
     }
 }

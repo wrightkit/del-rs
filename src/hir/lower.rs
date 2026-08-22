@@ -684,14 +684,6 @@ impl<'a> Lowerer<'a> {
             ExprKind::Bool(b) => HirExprKind::Literal(LiteralValue::Bool(*b)),
             ExprKind::Null => HirExprKind::Literal(LiteralValue::Null),
             ExprKind::Ident(_) => {
-                if self.ident_name(e) == "cam" && std::env::var("DEL_DEBUG").is_ok() {
-                    eprintln!("cam node {} res {:?} local_vars contains decl: {}", e.id.0,
-                        self.program.resolution.get(&e.id),
-                        self.program.resolution.get(&e.id).map(|r| match r {
-                            Resolution::Symbol(s) => self.local_vars.contains_key(&self.program.tables.symbol(*s).decl),
-                            _ => false,
-                        }).unwrap_or(false));
-                }
                 if let Some(Resolution::Symbol(sid)) = self.program.resolution.get(&e.id) {
                     if let Some(vid) = self.symbol_var.get(&sid) {
                         return HirExprKind::VarRef { var: *vid };

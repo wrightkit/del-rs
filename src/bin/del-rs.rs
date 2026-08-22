@@ -485,19 +485,20 @@ fn cmd_inspect(args: InspectArgs) -> CliResult {
 }
 
 fn cmd_support(args: SupportArgs, legacy: bool) -> CliResult {
+    let command = if legacy { "matrix" } else { "support" };
     match matrix::load_and_validate() {
         Ok(matrix) => {
-            let counts: serde_json::Value = matrix::state_counts(&matrix)
-                .into_iter()
-                .map(|(state, count)| (format!("{state:?}"), count))
+            let counts = matrix::state_counts(&matrix);
+            let states: serde_json::Value = counts
+                .iter()
+                .map(|(state, count)| (format!("{state:?}"), *count))
                 .collect();
-            let command = if legacy { "matrix" } else { "support" };
             let json = serde_json::json!({
                 "command": command,
                 "phase": "matrix",
                 "valid": true,
                 "entries": matrix.entries.len(),
-                "states": counts,
+                "states": states,
             });
             if args.output.json {
                 return emit_json(json).map(|_| support_exit_code(true));
@@ -517,7 +518,7 @@ fn cmd_support(args: SupportArgs, legacy: bool) -> CliResult {
                         matrix.meta.upstream_pin
                     ))
                     .map_err(internal_error)?;
-                for (state, count) in matrix::state_counts(&matrix) {
+                for (state, count) in &counts {
                     renderer
                         .emit_text(&format!("  {state:?}: {count}"))
                         .map_err(internal_error)?;
@@ -526,7 +527,6 @@ fn cmd_support(args: SupportArgs, legacy: bool) -> CliResult {
             Ok(support_exit_code(true))
         }
         Err(problems) => {
-            let command = if legacy { "matrix" } else { "support" };
             let json = serde_json::json!({
                 "command": command,
                 "phase": "matrix",
@@ -585,7 +585,7 @@ fn cmd_compatibility(output: cli::OutputArgs) -> CliResult {
                 "problems": problems,
             });
             if output.json {
-                emit_json(json).map(|_| evidence_error_exit_code())
+                emit_json(json).map(|_| 1)
             } else {
                 let renderer = cli::Renderer::new(&output);
                 for problem in problems {
@@ -596,7 +596,7 @@ fn cmd_compatibility(output: cli::OutputArgs) -> CliResult {
                         )
                         .map_err(internal_error)?;
                 }
-                Ok(evidence_error_exit_code())
+                Ok(1)
             }
         }
     }
@@ -660,24 +660,19 @@ fn compatibility_exit_code(unexpected_regressions: usize) -> u8 {
     }
 }
 
-fn evidence_error_exit_code() -> u8 {
-    1
-}
-
 fn internal_error(error: impl std::fmt::Display) -> CliError {
     CliError::Internal(error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{compatibility_exit_code, evidence_error_exit_code, support_exit_code};
+    use super::{compatibility_exit_code, support_exit_code};
 
     #[test]
-    fn json_exit_codes_follow_support_and_evidence_results() {
+    fn json_exit_codes_follow_support_and_compatibility_results() {
         assert_eq!(support_exit_code(true), 0);
         assert_eq!(support_exit_code(false), 1);
         assert_eq!(compatibility_exit_code(0), 0);
         assert_eq!(compatibility_exit_code(1), 1);
-        assert_eq!(evidence_error_exit_code(), 1);
     }
 }
