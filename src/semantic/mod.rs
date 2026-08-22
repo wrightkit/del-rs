@@ -551,7 +551,7 @@ impl<'a> Builder<'a> {
     fn resolve_decl_types(&mut self) {
         let root = self.tables.root_scope;
 
-        // Aliases (transparent; repeat a few passes for alias-to-alias).
+        // Aliases (transparent).
         let aliases = std::mem::take(&mut self.pending_aliases);
         for (name, target) in aliases {
             let ty = self.type_of(&target, root);
@@ -562,31 +562,6 @@ impl<'a> Builder<'a> {
                     }
                 }
                 self.aliases.insert(name, ty);
-            }
-        }
-        for _ in 0..3 {
-            let mut changed = false;
-            let names: Vec<String> = self.aliases.keys().cloned().collect();
-            for name in names {
-                let ty = self.aliases[&name].clone();
-                let mut new_ty = None;
-                match &ty {
-                    Type::External(_) => {}
-                    _ => {
-                        if let Some(resolved) = self.resolve_alias_body(&ty) {
-                            new_ty = Some(resolved);
-                        }
-                    }
-                }
-                if let Some(t) = new_ty {
-                    if t != ty {
-                        self.aliases.insert(name, t);
-                        changed = true;
-                    }
-                }
-            }
-            if !changed {
-                break;
             }
         }
 
@@ -904,18 +879,6 @@ impl<'a> Builder<'a> {
             }
         }
         out
-    }
-
-    /// Alias bodies may reference other aliases: re-resolve a stored Type.
-    fn resolve_alias_body(&self, ty: &Type) -> Option<Type> {
-        match ty {
-            Type::Array(inner) => {
-                let i = self.resolve_alias_body(inner)?;
-                Some(Type::Array(Box::new(i)))
-            }
-            Type::External(_) => None,
-            _ => None,
-        }
     }
 
     fn scope_of_any(&self, nid: NodeId, _sid: SymbolId, fallback: ScopeId) -> ScopeId {

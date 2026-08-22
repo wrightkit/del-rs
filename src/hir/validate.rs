@@ -13,16 +13,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         out.push(error(Phase::Hir, code, span, msg));
     };
 
-    // HI002: no unbound type params outside generic contexts, no Error types
-    // except on Error nodes.
-    for f in &hir.funcs {
-        if let Some(body) = &f.body {
-            check_block_type_wellformed(body, &mut |code, span, msg| {
-                err(code, span, msg, &mut diags)
-            });
-        }
-    }
-
     // HI003: VarRefs reference existing vars.
     for (id, e) in hir.exprs.iter().enumerate() {
         match &e.kind {
@@ -84,9 +74,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
     }
 
     // HI007: break/continue inside loops or switch.
-    for (_, e) in hir.exprs.iter().enumerate() {
-        let _ = e;
-    }
     for f in &hir.funcs {
         if let Some(body) = &f.body {
             let mut depth = 0u32;
@@ -131,47 +118,6 @@ fn check_block_delete_operands(
             HirStmtKind::Block(b) => check_block_delete_operands(b, hir, err),
             _ => {}
         }
-    }
-}
-
-fn check_block_type_wellformed(block: &HirBlock, err: &mut dyn FnMut(&str, crate::span::Span, String)) {
-    for s in &block.stmts {
-        match &s.kind {
-            HirStmtKind::Block(b) => check_block_type_wellformed(b, err),
-            HirStmtKind::If { then, els, .. } => {
-                check_block_type_wellformed_stmt(then, err);
-                if let Some(e) = els {
-                    check_block_type_wellformed_stmt(e, err);
-                }
-            }
-            HirStmtKind::While { body, .. } => check_block_type_wellformed_stmt(body, err),
-            HirStmtKind::For { init, step, body, .. } => {
-                if let Some(i) = init {
-                    check_block_type_wellformed_stmt(i, err);
-                }
-                if let Some(st) = step {
-                    check_block_type_wellformed_stmt(st, err);
-                }
-                check_block_type_wellformed_stmt(body, err);
-            }
-            HirStmtKind::AutoFor { body, .. } => check_block_type_wellformed_stmt(body, err),
-            HirStmtKind::Foreach { body, .. } => check_block_type_wellformed_stmt(body, err),
-            HirStmtKind::Switch { arms, .. } => {
-                for a in arms {
-                    for st in &a.stmts {
-                        check_block_type_wellformed_stmt(st, err);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn check_block_type_wellformed_stmt(s: &HirStmt, err: &mut dyn FnMut(&str, crate::span::Span, String)) {
-    match &s.kind {
-        HirStmtKind::Block(b) => check_block_type_wellformed(b, err),
-        _ => {}
     }
 }
 

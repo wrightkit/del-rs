@@ -1103,12 +1103,6 @@ impl<'a> Parser<'a> {
             }
             match self.parse_decl_after_attrs(attrs, true) {
                 DeclOutcome::Function(f) => {
-                    let end = match f.body {
-                        FuncBody::Block(ref b) => b.span,
-                        FuncBody::Expr(ref e) => e.span,
-                        FuncBody::None => f.name.span,
-                    };
-                    let _ = end;
                     members.push(MemberDecl {
                         id,
                         span: self.span_from(start),
@@ -1116,8 +1110,6 @@ impl<'a> Parser<'a> {
                     });
                 }
                 DeclOutcome::Var(v) => {
-                    let end = v.name.span;
-                    let _ = end;
                     members.push(MemberDecl {
                         id,
                         span: self.span_from(start),
