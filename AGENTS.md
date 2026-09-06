@@ -49,9 +49,49 @@ Compatibility targets observable DEL/OSTW semantics, not upstream internal
 architecture, generated helper identity, optimizer shape, formatting, or text
 identity.
 
-See [`docs/implementation-role.md`](docs/implementation-role.md) for the durable
-repository/product relationship and [`docs/architecture.md`](docs/architecture.md)
-for implementation details.
+## Architecture routing
+
+For substantive implementation work, resolve the relevant current contract from
+[`docs/architecture/README.md`](docs/architecture/README.md) before editing.
+The old `docs/architecture.md` and `docs/decisions.md` are historical/compatibility
+entry points and do not override current contracts or code reality.
+
+Use:
+
+- [`language-core.md`](docs/architecture/language-core.md) for DEL/OSTW scope,
+  project/semantic ownership, typed behavior, and feature locality;
+- [`workshop-boundary.md`](docs/architecture/workshop-boundary.md) for runtime and
+  compiler-lowering ownership at the canonical Workshop boundary.
+
+If the Issue, current architecture contract, support evidence, and source/tests
+disagree materially, stop and surface the mismatch rather than deciding the
+architecture by implementation convenience.
+
+## Upstream and provenance
+
+For the declared DEL/OSTW core-language surface, the established upstream
+implementation is the executable specification. Core behavior is
+presumptively in scope unless explicitly excluded as editor/integration
+functionality or demonstrated to be a non-contractual implementation artifact.
+
+Inspect upstream source/docs/tests to understand behavior, then implement the
+behavior directly in clear Rust. Do not mechanically translate or copy
+unlicensed upstream compiler internals. Fixtures and evidence must follow
+[`docs/provenance.md`](docs/provenance.md).
+
+The support matrix, inventory, corpus, probes, and real projects verify current
+completeness and compatibility. They do not decide whether an established core
+feature belongs in scope.
+
+## Semantic implementation
+
+Prefer typed Rust for observable DEL/OSTW behavior and invariants: project/import
+semantics, type/member/overload rules, dispatch, capture/reference behavior,
+storage/lifetime semantics, runtime intent, and lowering decisions.
+
+Machine-readable matrices/inventories may record capability identity,
+provenance, evidence links, and support state. Do not turn them into an
+interpreted semantic specification.
 
 ## Development priority
 
@@ -65,16 +105,10 @@ DEL/OSTW project exposes a blocker:
 5. prefer coherent implementation waves over unnecessary per-construct issue/PR
    fragmentation.
 
-Internal module layout, helper abstractions, and concrete lowering organization
-are revisable unless they affect a public/versioned contract, repository
-ownership, source provenance, or observable compatibility.
-
-## Upstream and provenance
-
-Pinned OSTW/DeltinScript sources are compatibility references, not architecture
-mandates. Unlicensed upstream compiler internals must not be copied or
-mechanically translated. Fixtures and behavior evidence must follow the
-repository's provenance and licensing documentation.
+Internal module layout and helper abstractions are revisable. If the smallest
+diff would deepen an already mixed responsibility, the smallest bounded
+extraction needed to keep the changed feature cohesive is in scope; unrelated
+cleanup remains out of scope.
 
 ## Validation
 

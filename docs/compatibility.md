@@ -1,142 +1,59 @@
-# deltin-rs Compatibility Contract
+# deltin-rs Compatibility Evidence Contract
 
-Status: **living reference** · Owner: Architecture. This document is the
-human-readable compatibility contract for the `deltin-rs` parsing and semantic pipeline. The
-machine-readable declared surface is
-[`support-matrix.toml`](support-matrix.toml); every claim here is derived from
-that matrix and from the corpus evidence it references.
+This document defines how `deltin-rs` records and evaluates **current implementation support**. It does not define the DEL/OSTW core-language scope.
 
-## What compatibility means
+The current language contract is [`docs/architecture/language-core.md`](architecture/language-core.md): for the declared core-language surface, established upstream DeltinScript/OSTW behavior is the executable specification and is presumptively in scope unless explicitly excluded as editor/integration behavior or demonstrated non-contractual implementation detail.
 
-Compatibility with OSTW/DeltinScript is **observable semantic compatibility
-for the declared support surface**. It is not:
+`support-matrix.toml`, corpus fixtures, reference probes, and real projects measure how much of that language is currently implemented and evidenced. A missing or `planned` matrix entry is an implementation gap, not evidence that an established core feature is outside the language.
 
-- upstream compiler architecture or internal representation identity;
-- output-text identity (generated Workshop text, formatting, optimizer
-  choices, or internal naming are not correctness criteria);
-- a promise to reproduce upstream bugs or internals beyond observable
-  behavior.
+## Compatibility target
 
-The pipeline contract is:
+Compatibility means observable semantic compatibility. Relevant evidence includes:
 
-```text
-DEL/OSTW source -> source model -> DEL semantic model -> typed DEL HIR
--> [integration boundary] -> workshop-rs
-```
+- accepted/rejected source and project behavior;
+- structured diagnostics and provenance;
+- source/project semantic queries;
+- high-level runtime meaning such as dispatch, storage, references, closures, recursion, and lifetime behavior;
+- source→Workshop lowering where supported;
+- declared Workshop→DEL/OSTW reconstruction behavior.
 
-Compatibility is established and measured per capability, from the pinned
-upstream oracle and the corpus, not as a single aggregate score.
-
-## `.del` and `.ostw` as accepted source forms
-
-OSTW and DeltinScript are the same language: DeltinScript is the language
-implemented by the OSTW compiler (there is no separate reference
-implementation — see [`provenance.md`](provenance.md)). The parser accepts
-`.del`, `.ostw`, and `.workshop` source files interchangeably, and no
-semantic distinction between the extensions is asserted unless corpus
-evidence establishes one. The only dialect-like distinction in the corpus is
-**OSTW syntax vs. the vanilla Overwatch Workshop superset syntax** (vanilla
-rules and workshop-context blocks are parsed as opaque spans; see
-[`syntax-notes.md`](syntax-notes.md) and [`limitations.md`](limitations.md)).
+It does not require upstream compiler architecture, internal IR identity, helper names, optimizer shape, formatting, generated temporary names, or text/byte-identical Workshop output unless one of those affects an observable contract.
 
 ## Support-matrix states
 
-Every tracked capability in [`support-matrix.toml`](support-matrix.toml) has
-exactly one state, defined as follows:
+`support-matrix.toml` is the machine-readable record of **current evidenced support state** for tracked capabilities. It is validated by tests and `deltin-rs support --check`.
 
 | State | Meaning |
 | --- | --- |
-| `planned` | Inventoried and evidenced upstream, but not yet implemented; not claimed as supported. |
-| `source-supported` | Lexed/parsed into documented AST structures with stable spans; no semantic claims. |
-| `semantic-supported` | Resolved, type-checked, and diagnosed by the semantic model / HIR; no Workshop emission required. |
-| `lowering-dependent` | Requires concrete Workshop encoding owned by deltin-rs #30; the canonical WIR, catalog, and emission contracts remain owned by `workshop-rs`, while typed HIR carries intent only. |
-| `end-to-end-supported` | Fully supported through Workshop emission; currently unused (no end-to-end path exists in this crate). |
-| `out-of-scope` | Deliberately outside the `deltin-rs` language contract (e.g. editor behavior). |
+| `planned` | Known/tracked behavior is not yet claimed as implemented at this layer. |
+| `source-supported` | Parsing/source representation is evidenced; no stronger semantic claim is implied. |
+| `semantic-supported` | Semantic/type/HIR behavior is evidenced without requiring complete Workshop emission. |
+| `lowering-dependent` | Source semantics exist but end-to-end support depends on DEL-owned lowering into canonical Workshop. |
+| `end-to-end-supported` | The tracked capability is evidenced through the declared end-to-end path. |
+| `out-of-scope` | The tracked item is intentionally outside this repository's product/language implementation boundary, such as editor-only functionality. This state must not be used to exclude established core-language behavior merely because it is unimplemented. |
 
-Categories: `syntax`, `semantic`, `runtime-semantics`, `workshop-lowering`,
-`compiler-utility`, `decompiler`, `editor`, `project`.
+The matrix is not an architecture specification, feature authorization list, or substitute for upstream core behavior.
 
-Because states include `lowering-dependent` and `out-of-scope` capabilities,
-**no single aggregate percentage is reported** anywhere in the documentation;
-a percentage would misrepresent the declared support boundary. The matrix and
-its per-entry evidence are the source of truth.
+## Evidence methodology
 
-## Workshop-independent parsing and semantic analysis vs. end-to-end compilation
+Compatibility evidence should remain attributable and independently useful:
 
-`deltin-rs` supports Workshop-independent parsing and semantic analysis:
+- **Corpus fixtures** retain source/license/expectation provenance and structurally valid source context.
+- **Pinned reference probes** compare against the recorded upstream implementation identity when reproducible.
+- **Real projects** retain immutable repository/revision/path provenance and remain stronger product evidence than isolated synthetic examples.
+- **Minimized regressions** preserve a distinct failure mode when useful without replacing the full-project evidence that exposed it.
+- **Matrix validation** checks schema/state/evidence integrity; it does not prove the implementation is correct.
 
-- the full syntax, semantic, and runtime-semantics surface parses, resolves,
-  type-checks, and lowers to typed HIR with provenance;
-- a bounded semantic oracle executes high-level behavior (allocation/deletion,
-  virtual dispatch, recursion, lambdas, arrays, switch fallthrough) so corpus
-  cases can distinguish correct from incorrect behavior before any backend
-  exists;
-- Workshop-facing names bind through the `WorkshopProvider` trait; the
-  `NoopProvider` treats them as unresolved-but-legal with structural checks
-  only. No canonical Workshop catalog data lives in this crate.
+Do not promote an expectation because the implementation under test agrees with itself. Unexpected divergence from independent evidence is a compatibility failure until explained or the owning contract is deliberately changed.
 
-End-to-end Workshop compilation (`DEL/OSTW -> Workshop text`) is
-**`lowering-dependent`**: the concrete encoding (variable slots, helper
-rules, dispatch tables, recursion stacks, reference layouts, emitter) is
-deltin-rs #30 work. It consumes typed HIR across the documented boundary; the
-canonical WIR, catalog, and emission contracts remain owned by `workshop-rs`.
-Decompilation (`Workshop -> DEL/OSTW`) is `planned` (issue #9).
+## Workshop-independent vs end-to-end support
 
-## Corpus and differential-testing methodology
+Parsing, project loading, semantic/type analysis, HIR, diagnostics, and inspect/query may be supported independently of full Workshop lowering.
 
-Compatibility claims are grounded in the corpus under `tests/corpus/`, the
-feature inventory ([`inventory.md`](inventory.md)), and — where reproducible —
-the pinned upstream compiler.
+DEL/OSTW-specific runtime/compiler semantics remain owned by `deltin-rs`; canonical Workshop WIR/catalog/validation/emission remain owned by `workshop-rs`. See [`docs/architecture/workshop-boundary.md`](architecture/workshop-boundary.md).
 
-- **Fixture headers.** Every `.del`/`.ostw` corpus fixture carries
-  `// source: <url@commit>`, `// license: <license>`, and `// expect: <outcome>`
-  directives. The corpus harness (`tests/corpus.rs`, run on every CI run)
-  fails on missing or empty source/license directives and asserts each
-  fixture's declared outcome.
-- **Accept/reject agreement.** The primary compatibility record is
-  accept/reject and diagnostic-presence agreement per fixture, expressed as
-  `// expect:` outcomes — never output-text identity.
-- **Differential comparison.** Comparing deltin-rs against a pinned upstream
-  build is the defined gap-discovery methodology for matrix entries; it is
-  gated on the availability of a pinned upstream build and is not a CI merge
-  gate. Divergences are tracked against the matrix entries they affect.
-- **Matrix validation.** `tests/matrix.rs` (CI gate) and the
-  `deltin-rs support --check` command validate `support-matrix.toml`: schema,
-  unique ids, fixed category/state sets, existing evidence paths, and a
-  rationale note on every `lowering-dependent`/`out-of-scope` entry.
-- **Evidence report.** `tests/corpus.rs` and
-  `deltin-rs maintainer compatibility --json`
-  classify each source case by independent evidence and separate matched
-  behavior, known gaps, unsupported cases, unexpected regressions, and
-  inconclusive evidence. Unknown expectations require an explicit non-passing
-  status; they are never promoted to compatibility by native agreement.
+A canonical Workshop gap is fixed in `workshop-rs` only when it is genuinely a Workshop concept. A DEL-specific runtime/lowering gap stays here.
 
-`pinned-oracle` fixtures must use the pinned OSTW compiler repository and
-commit. `real-project` fixtures must use their own immutable repository,
-revision, path, and license provenance; they cannot reuse the pinned upstream
-compiler identity. Compiler-shipped Examples and Modules remain project-level
-`pinned-oracle` fixtures until an independent real project is added.
+## Provenance
 
-## Pinned upstream oracle and provenance boundary
-
-Compatibility is defined against a single pinned upstream reference,
-recorded in [`provenance.md`](provenance.md):
-
-- `ItsDeltin/Overwatch-Script-To-Workshop` (repo + wiki), pinned at a
-  specific commit, shallow-cloned under `.upstream-refs/` (git-ignored);
-- upstream fixtures are imported under the MIT license with attribution
-  headers; re-pinning is a deliberate compatibility-contract decision owned
-  by the architect/PM;
-- the `docs/` analysis is original deltin-rs work quoting small upstream
-  examples for evidence.
-
-## Related documents
-
-- [`support-matrix.toml`](support-matrix.toml) — machine-readable declared surface (source of truth).
-- [`inventory.md`](inventory.md) — feature inventory with per-entry upstream evidence.
-- [`limitations.md`](limitations.md) — current support boundary and gap classification.
-- [`provenance.md`](provenance.md) — pinned oracle identity and licensing rules.
-- [`architecture.md`](architecture.md) — implemented architecture and the provider/HIR seams.
-- [`workshop-conformance.md`](workshop-conformance.md) — machine-readable
-  report and the canonical Workshop integration boundary.
-- [`syntax-notes.md`](syntax-notes.md) — lexical/grammar reference from the pinned upstream.
+Pinned upstream identity, licensing guardrails, and re-pinning procedure remain in [`provenance.md`](provenance.md). Syntax observations in [`syntax-notes.md`](syntax-notes.md) and inventory records may aid investigation, but neither overrides the current architecture contract or executable evidence.
