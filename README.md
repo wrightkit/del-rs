@@ -71,10 +71,11 @@ temporary variables, or output-text identity.
 | DEL/OSTW → Workshop compilation | 🟡 Partial | Core HIR→WIR lowering exists; advanced runtime/project surfaces are incomplete |
 | Workshop → DEL/OSTW reconstruction | ⏳ Not yet | Will consume canonical `workshop-rs` semantics and remain owned by `deltin-rs` |
 
-Exact feature evidence lives in the
+Exact implementation evidence lives in the
 [machine-readable support matrix](docs/support-matrix.toml); see
 [`docs/compatibility.md`](docs/compatibility.md) for methodology and state
-meanings.
+meanings. The matrix records current support; it does not define which
+established upstream core-language features belong in scope.
 
 ## CLI and library
 
@@ -94,9 +95,8 @@ deltin-rs maintainer compatibility [--json]
 
 The standalone semantic/tooling path does not require Wright. Workshop-dependent
 compilation uses the released `workshop-rs` library. See
-[`docs/implementation-role.md`](docs/implementation-role.md) for the durable
-relationship and [`docs/architecture.md`](docs/architecture.md) for internal
-implementation details.
+[`docs/architecture/README.md`](docs/architecture/README.md) for the current
+architecture and dependency boundary.
 
 ## Relationship with Wright
 
@@ -126,8 +126,9 @@ unit-test counts alone.
 
 ## Documentation
 
-Architecture, compatibility, interfaces, provenance, limitations, and
-maintainer references are indexed in [`docs/README.md`](docs/README.md).
+Current architecture, compatibility/evidence, interfaces, provenance,
+limitations, and maintainer references are indexed in
+[`docs/README.md`](docs/README.md).
 
 ## Contributing
 
