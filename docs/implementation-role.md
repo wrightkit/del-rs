@@ -1,76 +1,14 @@
 # deltin-rs implementation role
 
-`deltin-rs` is an independently usable Rust implementation of the
-DeltinScript/OSTW language surface. Its durable product boundary includes
-parsing, project loading, semantic/type analysis, typed HIR, diagnostics,
-tooling, and compiler integration, in addition to any LPP provider process.
+The current repository role and ownership contracts are maintained in
+[`docs/architecture/`](architecture/README.md).
 
-## Durable model
+This path is retained as a compatibility pointer for older links. Do not add
+mutable support state or new architecture decisions here. Use:
 
-```text
-DEL / OSTW source
-  ↓
-deltin-rs parsing / project loading / semantic analysis
-  ↓
-DEL semantic model / typed HIR
-  ↓
-deltin-rs runtime + compiler lowering
-  ↓
-workshop-rs canonical WIR / validation / emission
-  ↓
-Workshop text
-```
-
-For the reverse direction:
-
-```text
-Workshop text
-  ↓
-workshop-rs parser / canonical WIR
-  ↓
-deltin-rs reconstruction
-  ↓
-DEL / OSTW source
-```
-
-`deltin-rs` therefore owns the language-specific semantics on both sides of the
-Workshop boundary. It deliberately reuses `workshop-rs` instead of becoming a
-second raw Workshop implementation.
-
-## Provider
-
-A provider is an integration role through which an implementation can expose
-language intelligence to a tooling client such as Wright. LPP is one possible
-process boundary. Provider support must not make standalone users depend on
-Wright.
-
-### Wright
-
-Wright is a downstream integration/tooling product. It combines `deltin-rs`,
-`opy-rs`, and `workshop-rs` with additional cross-language capabilities such as
-lint, analysis, validated source edits, agent tooling, CI/embedding, and
-language services.
-
-## Ownership
-
-`deltin-rs` owns DEL/OSTW syntax/project behavior, semantic/type rules, runtime
-semantics, language-specific lowering, diagnostics/provenance, standalone
-tooling, compatibility evidence, and Workshop→DEL reconstruction.
-
-`workshop-rs` owns raw Workshop parsing, canonical Workshop identities and
-semantics, WIR, validation, settings/localization, and emission.
-
-The dependency direction is `deltin-rs → workshop-rs`; `workshop-rs` does not
-depend back on DEL semantics.
-
-## Current reality
-
-The repository already has substantial standalone parsing, project, semantic,
-typed-HIR, and inspection capability. DEL/OSTW → Workshop compilation is only
-partially implemented, especially for advanced runtime and project/compiler
-surfaces, and Workshop → DEL reconstruction is not yet implemented.
-
-Those are implementation-completeness gaps. They do not change the repository's
-durable role as the independently usable DEL/OSTW implementation.
-
-Support claims remain governed by the support matrix and executable evidence.
+- [`language-core.md`](architecture/language-core.md) for DEL/OSTW scope,
+  project/semantic ownership, and typed implementation rules;
+- [`workshop-boundary.md`](architecture/workshop-boundary.md) for runtime/lowering
+  ownership and the canonical Workshop boundary;
+- [`support-matrix.toml`](support-matrix.toml), [`compatibility.md`](compatibility.md),
+  and executable evidence for current support reality.
