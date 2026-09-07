@@ -51,6 +51,8 @@ they are not parallel current architecture authorities.
   subject to executable evidence and current architecture.
 - [`provenance.md`](provenance.md) — pinned upstream identity, licensing
   guardrails, and re-pinning procedure.
+- [`../compatibility/ostw/`](../compatibility/ostw/) — owner-side pinned OSTW
+  corpus, probe, result, and reconstruction evidence.
 - [`workshop-conformance.md`](workshop-conformance.md) — integration with
   canonical `workshop-rs` feature/evidence identities.
 

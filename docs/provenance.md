@@ -13,6 +13,21 @@ Pinned on **2026-08-16** (UTC-05:00 local). Shallow clones (`--depth 1`) live un
 | OSTW / DeltinScript implementation (repo: `ItsDeltin/Overwatch-Script-To-Workshop`) | https://github.com/ItsDeltin/Overwatch-Script-To-Workshop | `817c1db4bace52123f054ffe10d3d8a06052e687` | 2026-08-08 | MIT (see below) |
 | OSTW wiki (documentation) | https://github.com/ItsDeltin/Overwatch-Script-To-Workshop.wiki | `e8894b972fae3fa9fd81dab0bb3672cc740a771e` | 2026-08-16 (clone head) | wiki content; see licensing note |
 
+The executable identity used for recorded observations is canonicalized in
+[`compatibility/ostw/reference.json`](../compatibility/ostw/reference.json):
+release `v3.4.0`, tag commit
+`769ce7aab097178cfe905bf21f0326d8e0d12e6b`, Linux x64 asset
+`v3.4.0-linux-x64.zip`, SHA-256
+`1ae882898961eac8ac25234a18fa3b130a02836651f7f936b9ece85f181e3a88`.
+The JSON record is the source of truth for the asset fields; this document
+describes their provenance and does not define a second pin.
+
+The complete evidence package was migrated from
+`wrightkit/wright/compatibility/ostw/` with corpus file hashes, probe results,
+reference identities, and explicit roots preserved. The old Wright copy remains
+only until the owner-cutover follow-up `wrightkit/wright#182` removes any
+consumer-required residue.
+
 ### License detail
 
 The OSTW repository contains one license file:

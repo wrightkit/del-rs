@@ -169,6 +169,7 @@ These are upstream compiler-side capabilities deltin-rs may provide as utilities
 | `compiler-utility.asset-exporter` | alphabet/model export tooling | `ostw/Deltinteger/Deltinteger/Asset Exporter/` |
 | `compiler-utility.ds-toml` | `ds.toml` project configuration (`entry_point`, `out_file`, `optimize_output`, `global_reference_validation`, `track_class_generations`, `reference_validation_type`, `abort_on_error`, `log_delete_reference_zero`, `new_class_register_optimization`, `reset_nonpersistent`, `paste_check_is_extended`, `subroutine_stacks_are_extended`, `c_style_workshop_output`, `compile_miscellaneous_comments`, `use_tabs_in_workshop_output`) | `wiki/ds.toml` |
 | `compiler-utility.json-type` | `import("file.json") as name` runtime JSON values | `wiki/Importing-data-from-.json-files`; `Deltinteger.Tests/ImportJsonTest.cs` |
+| `compiler-utility.ostw-reference-evidence` | Maintainer-only pinned OSTW identity, corpus/probe observations, and reconstruction boundary; reference replay is explicit and not a native CI gate | `compatibility/ostw/reference.json`; `compatibility/ostw/corpus.json`; `compatibility/ostw/results.json`; `compatibility/ostw/probes/results.json`; `compatibility/ostw/reconstruction/support-boundary.json` |
 
 ## 6. Decompiler
 

@@ -19,6 +19,22 @@ Compatibility means observable semantic compatibility. Relevant evidence include
 
 It does not require upstream compiler architecture, internal IR identity, helper names, optimizer shape, formatting, generated temporary names, or text/byte-identical Workshop output unless one of those affects an observable contract.
 
+## Pinned OSTW evidence package
+
+The owner-side pinned-reference package is [`compatibility/ostw/`](../compatibility/ostw/).
+Its machine-readable records are the canonical evidence surfaces for the external
+OSTW reference:
+
+- `reference.json` identifies the immutable v3.4.0 release asset;
+- `corpus.json` identifies the licensed corpus files, hashes, project roots, and provenance;
+- `results.json` records the pinned accept/reject and diagnostic observations;
+- `probes/` records focused semantic observations and their emitted-output hashes;
+- `reconstruction/` records the declared Workshop-to-OSTW boundary.
+
+`python3 compatibility/ostw/run_oracle.py --check` validates the committed package
+without the upstream binary. Reference acquisition and observation refresh are
+explicit maintainer operations; they are not native CI merge gates.
+
 ## Support-matrix states
 
 `support-matrix.toml` is the machine-readable record of **current evidenced support state** for tracked capabilities. It is validated by tests and `deltin-rs support --check`.
