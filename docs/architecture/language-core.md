@@ -39,6 +39,8 @@ Source-language behavior should have a discoverable domain home. Parser, semanti
 
 If implementing a feature would deepen an already mixed responsibility, the smallest bounded extraction needed to keep the changed behavior cohesive is within scope. Unrelated cleanup and speculative abstraction remain out of scope.
 
+The semantic checker keeps one explicit `Checker` state object while locating its current behavior by domain: `semantic/check/resolution.rs` owns type, name, member, and overload resolution; `semantic/check/expressions.rs` owns expression typing and lvalue rules; `semantic/check/statements.rs` owns statement and local-declaration checking; and `semantic/check/rules.rs` owns rule/body traversal. `semantic/check.rs` remains the shared-state and phase-orchestration facade, while `semantic/resolve.rs` defines resolution result types.
+
 ## Compatibility target
 
 Target observable semantic compatibility: accepted/rejected programs, project behavior, meaningful diagnostics/provenance, source tooling behavior, high-level runtime semantics, lowering results, and declared reconstruction contracts.
