@@ -5,7 +5,7 @@
 //! OSTW source that the native [`crate::compile_with_semantics`] source implementation
 //! accepts and re-lowers to semantically equivalent Workshop (the declared
 //! #119 normalization contract; see the integration suite in
-//! `crates/wright-ostw/tests/reconstruct.rs`).
+//! `tests/workshop_source.rs`).
 //!
 //! Design:
 //!
@@ -857,8 +857,8 @@ impl<'a> Emitter<'a> {
         // The pinned OSTW v3.4.0 reference requires a declared type on
         // `globalvar`/`playervar` declarations; the WIR carries no type
         // information, so the permissive universal `Any` type is emitted
-        // (honest: the variable genuinely may hold any type). Wright's
-        // native source implementation also accepts `Any`.
+        // (honest: the variable genuinely may hold any type). The native
+        // source implementation also accepts `Any`.
         for variable in self.program.global_variables.iter() {
             self.line(0, &format!("globalvar Any {};", variable.name));
         }

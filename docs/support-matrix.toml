@@ -805,6 +805,23 @@ state = "planned"
 evidence = ["docs/inventory.md"]
 
 [[features]]
+id = "compiler-utility.ostw-reference-evidence"
+name = "compiler-utility.ostw-reference-evidence"
+category = "compiler-utility"
+state = "source-supported"
+evidence = [
+  "compatibility/ostw/reference.json",
+  "compatibility/ostw/corpus.json",
+  "compatibility/ostw/results.json",
+  "compatibility/ostw/probes/results.json",
+  "compatibility/ostw/reconstruction/support-boundary.json",
+  "docs/compatibility.md",
+  "docs/provenance.md",
+  "docs/inventory.md",
+]
+notes = "Maintainer-only evidence validation and explicit reference replay; not a native CI merge gate."
+
+[[features]]
 id = "decompiler.workshop-to-ostw"
 name = "decompiler.workshop-to-ostw"
 category = "decompiler"
