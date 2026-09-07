@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/wrightkit/deltin-rs/compare/v0.1.2...v0.1.3) - 2026-09-07
+
+### Added
+
+- *(compatibility)* migrate OSTW reference evidence ([#95](https://github.com/wrightkit/deltin-rs/pull/95))
+
+### Other
+
+- *(readme)* polish overview and remove ai writing patterns ([#94](https://github.com/wrightkit/deltin-rs/pull/94))
+- *(workshop)* separate binding preparation from lowering ([#93](https://github.com/wrightkit/deltin-rs/pull/93))
+- *(semantic)* localize DEL checker responsibilities ([#92](https://github.com/wrightkit/deltin-rs/pull/92))
+- replace stale DEL architecture baseline with current contracts ([#89](https://github.com/wrightkit/deltin-rs/pull/89))
+
 ## [0.1.2](https://github.com/wrightkit/deltin-rs/compare/v0.1.1...v0.1.2) - 2026-09-05
 
 ### Added
