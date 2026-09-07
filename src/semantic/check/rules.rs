@@ -4,7 +4,7 @@ use super::*;
 use crate::semantic::types::is_constant_or_parallel;
 use crate::syntax::ast::*;
 
-impl<'a> Checker<'a> {
+impl Checker<'_> {
     pub(super) fn collect_enum_keys(&mut self) -> Vec<(Expr, bool)> {
         let mut out = Vec::new();
         for file in &self.program.project.files {

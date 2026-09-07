@@ -7,7 +7,7 @@ use crate::semantic::symbols::*;
 use crate::semantic::types::*;
 use crate::syntax::ast::*;
 
-impl<'a> Checker<'a> {
+impl Checker<'_> {
     pub(super) fn check_expr_with_hint(&mut self, expr: &Expr, expected: Type) -> Type {
         if matches!(expr.kind, ExprKind::Lambda(_)) {
             if let Type::FunctionValue(ft) = &expected {

@@ -5,7 +5,7 @@ use crate::semantic::symbols::*;
 use crate::semantic::types::*;
 use crate::syntax::ast::*;
 
-impl<'a> Checker<'a> {
+impl Checker<'_> {
     pub fn check_statement(&mut self, stmt: &Stmt) {
         match &stmt.kind {
             StmtKind::Block(b) => {

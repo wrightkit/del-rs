@@ -8,7 +8,7 @@ use crate::semantic::types::*;
 use crate::syntax::ast::*;
 use std::collections::HashMap;
 
-impl<'a> Checker<'a> {
+impl Checker<'_> {
     pub(super) fn resolve_type_ref(&mut self, ty: &TypeRef, scope: ScopeId) -> Type {
         match &ty.kind {
             TypeRefKind::Name(ident) => self.resolve_type_name(&ident.name, scope),
