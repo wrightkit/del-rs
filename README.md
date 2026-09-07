@@ -1,21 +1,15 @@
 # deltin-rs
 
-`deltin-rs` is WrightKit's standalone Rust library implementation of the
-DeltinScript / OSTW language surface. The repository also contains the
-separate, thin `deltin-rs-cli` executable package, whose binary remains named
-`deltin-rs`.
+`deltin-rs` is a standalone Rust library and CLI for the DeltinScript / OSTW
+language surface. It parses, type-checks, and lowers DeltinScript projects to
+Overwatch Workshop code without requiring external .NET runtimes.
 
-Wright is a downstream consumer that integrates `deltin-rs` with broader tooling
-such as linting, analysis, validated source editing, agent workflows, CI, and
-language services. An LPP **provider** is an integration
-role that `deltin-rs` may expose to Wright or other tooling clients.
+While Wright and external editors consume `deltin-rs` through native Rust APIs or
+LPP, the compiler and semantic analyzer operate independently.
 
-Canonical raw Workshop behavior is shared rather than duplicated. `deltin-rs`
-owns DEL/OSTW syntax, project loading, semantic/type behavior, runtime lowering,
-compiler behavior, diagnostics/provenance, standalone tooling, compatibility
-evidence, and Workshop-to-DEL reconstruction. `workshop-rs` owns canonical
-Workshop catalog identities, WIR, validation, settings/localization, raw
-Workshop parsing, and emission.
+`deltin-rs` owns DEL/OSTW syntax, project loading, semantic analysis, type
+checking, runtime lowering, and source reconstruction. Shared Workshop
+semantics, catalog identities, and emission remain delegated to `workshop-rs`.
 
 ```text
 DEL / OSTW source
@@ -34,23 +28,21 @@ Workshop text
 The reverse direction starts with Workshop parsed by `workshop-rs` and uses
 `deltin-rs`-owned reconstruction logic to produce useful DEL/OSTW source.
 
-## Features
+## Key features
 
-- **Recoverable parsing:** authored text, comments, trivia, identifiers, and
-  source locations are retained for diagnostics and source tooling.
-- **Project loading:** deterministic multi-file import resolution and project
+- Recoverable parsing: retains authored text, comments, trivia, and exact
+  locations for accurate diagnostics and refactoring tools.
+- Project resolution: deterministic multi-file import handling and project
   discovery.
-- **Semantic analysis:** name and type resolution, overloads, access control,
-  classes, structs, enums, inheritance, virtual dispatch, generics, lambdas,
-  pattern matching, and recursion checks.
-- **Typed semantic representation:** allocation/deletion, references, dispatch,
-  recursion, closures, and storage intent remain backend-neutral until lowering.
-- **Tooling APIs:** symbol, reference, type, and resolution queries for
-  standalone consumers and Wright.
-- **Compiler integration:** DEL HIR lowers through canonical `workshop-rs` WIR;
-  unsupported runtime/project behavior remains explicit.
-- **Compatibility evidence:** machine-checked support matrix, corpus fixtures,
-  provenance records, bounded semantic oracle, and evidence reports.
+- Semantic analysis: scoping, type inference, method overloads, classes,
+  structs, enums, interfaces, and virtual dispatch.
+- Typed representation: high-level semantic model that stays backend-neutral
+  until lowering.
+- Semantic queries: symbol, reference, and type lookups for editors and Wright.
+- Workshop code generation: lowers DEL HIR into canonical `workshop-rs` WIR with
+  explicit error reporting for unsupported runtime behavior.
+- Verified compatibility: validated against corpus fixtures, oracle snapshots,
+  and differential tests.
 
 ## Compatibility
 
@@ -100,13 +92,10 @@ architecture and dependency boundary.
 
 ## Relationship with Wright
 
-Wright is not the owner of DEL/OSTW language semantics. It consumes `deltin-rs`
-and adds a unified product layer across DEL/OSTW, OverPy, and raw Workshop,
-including cross-language lint, analysis, source-edit transactions, agent
-interfaces, CI/embedding, and language services.
-
-LPP/provider support is therefore an adapter surface for integration, not the
-identity of this repository.
+`deltin-rs` owns the syntax, type system, and AST for DeltinScript. Higher-level
+tools such as Wright consume these semantic results to provide cross-language
+refactoring, linting, and language server capabilities without modifying
+compiler internals.
 
 ## Building
 
