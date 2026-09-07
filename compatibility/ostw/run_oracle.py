@@ -154,7 +154,11 @@ def check_recorded_evidence(reference):
     require(len(result_probes) == len(probe_results.get("probes", [])), "duplicate probe result")
     require(set(result_probes) == set(manifests), "probe result set differs from manifests")
     for probe_id, manifest in manifests.items():
-        require(result_probes[probe_id].get("intent") == manifest.get("intent"), f"probe result intent differs: {probe_id}")
+        aggregate = result_probes[probe_id]
+        require(aggregate.get("intent") == manifest.get("intent"), f"probe result intent differs: {probe_id}")
+        require(aggregate.get("entry") == manifest.get("entry"), f"probe result entry differs: {probe_id}")
+        expected_runs = [load(PROBES / probe_id / f"result.{run['runId']}.json") for run in manifest.get("runs", [])]
+        require(aggregate.get("runs") == expected_runs, f"probe aggregate runs differ from per-run evidence: {probe_id}")
 
     boundary = load(PROBES.parent / "reconstruction" / "support-boundary.json")
     require(boundary.get("schemaVersion") == 1, "unsupported reconstruction boundary schema")
@@ -184,8 +188,15 @@ def acquire(reference, root):
         executable.chmod(0o755)
     return executable
 
+def uses_docker():
+    return shutil.which("docker") is not None
+
+def runtime_uri(path):
+    runtime_root = Path("/workspace") if uses_docker() else ROOT
+    return f"file://{(runtime_root / path.relative_to(ROOT)).as_posix()}"
+
 def command(executable):
-    if shutil.which("docker"):
+    if uses_docker():
         return ["docker", "run", "--rm", "-i", "--platform", "linux/amd64", "-v", f"{executable.parent}:/ostw:ro", "-v", f"{ROOT}:/workspace:ro", "-w", "/workspace", "mcr.microsoft.com/dotnet/runtime:8.0", "/ostw/Deltinteger"]
     if sys.platform == "linux": return [str(executable)]
     raise OracleError("OSTW_REFERENCE_MISSING: linux-x64 oracle needs Docker on this host")
@@ -259,12 +270,11 @@ def _lsp_session(executable, root, open_paths):
     global _BUFFER
     _BUFFER = bytearray()
     proc = subprocess.Popen(command(executable)+["--langserver"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    root_uri = f"file:///workspace/{root.relative_to(ROOT).as_posix()}"
-    uri_for = lambda path: f"file:///workspace/{path.relative_to(ROOT).as_posix()}"
+    root_uri = runtime_uri(root)
     send(proc, {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":None,"rootUri":root_uri,"capabilities":{}}})
     deadline=time.monotonic()+30; receive(proc, deadline); send(proc,{"jsonrpc":"2.0","method":"initialized","params":{}})
     for path in sorted(open_paths):
-        send(proc,{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri_for(path),"languageId":"ostw","version":1,"text":path.read_text(encoding="utf-8")}}})
+        send(proc,{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":runtime_uri(path),"languageId":"ostw","version":1,"text":path.read_text(encoding="utf-8")}}})
     # The langserver debounces compiles ~50ms after the last didOpen and
     # publishes one coherent workshopCode/elementCount/diagnostics triple per
     # compile. Compiles that fire between didOpen batches are timing-dependent;
@@ -316,7 +326,7 @@ def last_compile_triple(messages):
 def located_diagnostics(messages, root_dir, final_elements_index):
     """Flatten the diagnostics of the deterministic final compile, attaching
     the document uri carried by each publishDiagnostics notification."""
-    prefix = f"file:///workspace/{root_dir.relative_to(ROOT).as_posix()}/"
+    prefix = f"{runtime_uri(root_dir)}/"
     located = []
     for message in messages[final_elements_index+1:]:
         if message.get("method") != "textDocument/publishDiagnostics":

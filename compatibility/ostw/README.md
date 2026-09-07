@@ -11,6 +11,11 @@ committed nor a Cargo dependency. `reference.json` is the canonical machine
 identity for the pinned release asset; the recorded results and probe manifests
 must refer to that same identity.
 
+The corpus sources are byte-identical to the current Wright copy. The
+`protect-ban/main.ostw` manifest hash is corrected to the actual migrated bytes
+because Wright's pre-existing `corpus.json` entry was stale; recorded reference
+observations are unchanged.
+
 `reference.json` pins the release tag, immutable tag commit, release asset size,
 and SHA-256. `latest` is never an evidence identity.
 
