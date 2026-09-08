@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/wrightkit/deltin-rs/compare/v0.1.3...v0.1.4) - 2026-09-08
+
+### Other
+
+- apply org-wide Rust artifact size policy ([#100](https://github.com/wrightkit/deltin-rs/pull/100))
+
 ## [0.1.3](https://github.com/wrightkit/deltin-rs/compare/v0.1.2...v0.1.3) - 2026-09-07
 
 ### Added
