@@ -58,7 +58,7 @@ fn localized_string_uses_canonical_workshop_identity() {
     let (program, diagnostics) = lower(
         r#"
 rule: "localized" Event.OngoingGlobal {
-    BigMessage(AllPlayers(), @"Hello");
+    BigMessage(AllPlayers(), @"hello");
 }
 "#,
     );

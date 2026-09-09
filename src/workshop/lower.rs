@@ -2464,8 +2464,16 @@ impl<'a> Lowerer<'a> {
                         );
                     })?;
                     let locale = workshop_rs::catalog::Locale::new("en-US");
-                    let Some(localized) = catalog.resolve_localized_string(&locale, &spelling)
-                    else {
+                    let localized = catalog
+                        .resolve_localized_string(&locale, &spelling)
+                        .or_else(|| {
+                            catalog.localized_strings().find(|entry| {
+                                entry
+                                    .spelling(&locale)
+                                    .is_some_and(|alias| alias.eq_ignore_ascii_case(&spelling))
+                            })
+                        });
+                    let Some(localized) = localized else {
                         self.unsupported(
                             expr.span,
                             format!("unknown canonical Workshop localized string {spelling:?}"),
