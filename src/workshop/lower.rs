@@ -594,30 +594,6 @@ impl<'a> Lowerer<'a> {
             match &stmt.kind {
                 HirStmtKind::Block(inner) => self.collect_direct_parameter_calls(inner, calls),
                 HirStmtKind::Expr(expr) if self.is_parameter_call(*expr) => calls.push(*expr),
-                HirStmtKind::If { then, els, .. } => {
-                    if self.stmt_contains_parameter_call(then)
-                        || els
-                            .as_deref()
-                            .is_some_and(|stmt| self.stmt_contains_parameter_call(stmt))
-                    {
-                        // The caller rejects control-flow parameter calls below.
-                    }
-                }
-                HirStmtKind::While { body, .. }
-                | HirStmtKind::AutoFor { body, .. }
-                | HirStmtKind::Foreach { body, .. } => {
-                    let _ = self.stmt_contains_parameter_call(body);
-                }
-                HirStmtKind::For { body, .. } => {
-                    let _ = self.stmt_contains_parameter_call(body);
-                }
-                HirStmtKind::Switch { arms, .. } => {
-                    let _ = arms.iter().any(|arm| {
-                        arm.stmts
-                            .iter()
-                            .any(|stmt| self.stmt_contains_parameter_call(stmt))
-                    });
-                }
                 _ => {}
             }
         }

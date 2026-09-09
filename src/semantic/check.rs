@@ -1,8 +1,3 @@
-//! Shared semantic checker state and phase orchestration.
-//!
-//! The domain implementations live in the sibling modules under
-//! `check/`: resolution, expressions, statements, and feature-specific rules.
-
 use crate::diagnostics::{error, Phase};
 use crate::semantic::provider::WorkshopProvider;
 use crate::semantic::resolve::Resolution;
@@ -100,7 +95,6 @@ impl<'a> Checker<'a> {
             self.scopes.pop();
         }
         self.check_enum_member_keys();
-        // Top-level variable initializers.
         let init_bodies: Vec<(NodeId, ScopeId)> = self
             .program
             .init_scopes

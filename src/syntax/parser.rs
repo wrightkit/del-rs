@@ -1,8 +1,7 @@
-//! Recoverable parser: tokens -> AST + diagnostics.
+//! Recoverable parser.
 //!
-//! Policy (architecture §8/§10): never panic; every consumed region maps to an
-//! AST node; regions that cannot be parsed become `Error` nodes; diagnostics
-//! are emitted at the point of first failure with the recovery skip recorded.
+//! Every consumed region maps to an AST node; regions that cannot be parsed
+//! become `Error` nodes, and diagnostics record the recovery skip.
 
 use crate::diagnostics::{error, Diagnostic, Phase};
 use crate::span::{FileId, Span};
@@ -18,11 +17,8 @@ pub struct Parser<'a> {
     text: &'a str,
     diagnostics: Vec<Diagnostic>,
     next_node: u32,
-    /// Open delimiters awaiting their close (for PR032 recovery).
     open_delims: Vec<(Span, TokenKind)>,
-    /// DocComment spans preceding the next item.
     pending_docs: Vec<Span>,
-    /// Lookahead depth: diagnostics are suppressed while > 0.
     silent: usize,
     /// Formatted-string argument context: a `>` is only a comparison if an
     /// expression follows it (upstream `StringCheck`).
@@ -43,7 +39,6 @@ pub fn parse(tokens: &[Token], file: FileId, text: &str) -> (AstFile, Vec<Diagno
         string_check: false,
     };
     let ast = p.parse_file();
-    // Synthesized closes for unclosed delimiters.
     for (open, kind) in &p.open_delims {
         p.diagnostics.push(error(
             Phase::Parse,
@@ -75,7 +70,6 @@ impl Parser<'_> {
         }
     }
 
-    /// Skip trivia; record doc comments.
     fn skip_trivia(&mut self) {
         while self.pos < self.tokens.len() {
             match self.tokens[self.pos].kind {
@@ -131,7 +125,6 @@ impl Parser<'_> {
         self.peek() == kind
     }
 
-    /// Consume the next non-trivia token.
     fn consume(&mut self) -> Token {
         self.skip_trivia();
         if self.pos < self.tokens.len() {
@@ -195,7 +188,6 @@ impl Parser<'_> {
         Span::new(self.file, start, self.prev_end().end)
     }
 
-    /// End offset of the last consumed token (for item spans).
     fn prev_end(&self) -> Span {
         if self.pos > 0 {
             let mut i = self.pos - 1;
@@ -207,10 +199,6 @@ impl Parser<'_> {
             Span::new(self.file, 0, 0)
         }
     }
-
-    // ------------------------------------------------------------------
-    // File / items
-    // ------------------------------------------------------------------
 
     fn parse_file(&mut self) -> AstFile {
         let mut items = Vec::new();
@@ -224,7 +212,6 @@ impl Parser<'_> {
             let item = match self.parse_item() {
                 Some(i) => i,
                 None => {
-                    // Recovery: skip to the next item start.
                     self.pending_docs.clear();
                     if self.pos == before {
                         self.consume();
@@ -234,7 +221,6 @@ impl Parser<'_> {
                 }
             };
             if self.pos == before {
-                // Guarantee progress even for error items.
                 self.consume();
             }
             for d in self.pending_docs.drain(..) {
@@ -356,10 +342,6 @@ impl Parser<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Rules
-    // ------------------------------------------------------------------
-
     fn parse_rule_or_vanilla(&mut self) -> ItemKind {
         let disabled = self.at(TokenKind::KwDisabled);
         if disabled {
@@ -373,7 +355,6 @@ impl Parser<'_> {
         let name_tok = match self.expect(TokenKind::Str, "rule name string") {
             Some(t) => t,
             None => {
-                // Recovery: consume a few tokens so the loop makes progress.
                 self.consume();
                 return ItemKind::Error {
                     consumed: self.prev_end(),
@@ -415,11 +396,11 @@ impl Parser<'_> {
             }
             if !self.at(TokenKind::KwIf) {
                 if disabled_cond {
-                    self.pos = save; // disabled without if: not a condition
+                    self.pos = save;
                 }
                 break;
             }
-            let cond_span = self.consume().span; // if
+            let cond_span = self.consume().span;
             self.expect(TokenKind::LParen, "'(' after 'if'");
             let expr = self.parse_expr();
             self.expect(TokenKind::RParen, "')'");
@@ -553,10 +534,6 @@ impl Parser<'_> {
         Span::new(self.file, open.start, end)
     }
 
-    // ------------------------------------------------------------------
-    // Declarations
-    // ------------------------------------------------------------------
-
     fn parse_attrs(&mut self) -> FuncAttrs {
         let mut attrs = FuncAttrs {
             access: None,
@@ -643,14 +620,12 @@ impl Parser<'_> {
             Some(n) => n,
             None => return DeclOutcome::Error { consumed: ty.span },
         };
-        // Optional generic type args for generic functions.
         let type_params = if self.at(TokenKind::Lt) {
             self.parse_type_params()
         } else {
             Vec::new()
         };
         if self.at(TokenKind::LParen) {
-            // Function.
             self.consume();
             let params = self.parse_params();
             self.expect(TokenKind::RParen, "')'");
@@ -679,7 +654,6 @@ impl Parser<'_> {
                 });
             }
             let body = if self.at(TokenKind::Colon) {
-                // Macro (expression body).
                 self.consume();
                 let e = self.parse_expr();
                 if semicolon {
@@ -713,7 +687,6 @@ impl Parser<'_> {
                 body,
             })
         } else {
-            // Variable / field.
             let (var_id, extended, target) = self.parse_variable_elements_tail();
             let init = self.parse_optional_init();
             if semicolon {
@@ -823,7 +796,6 @@ impl Parser<'_> {
             let before = self.pos;
             let p = self.parse_param();
             if self.pos == before {
-                // No progress: consume one token to guarantee termination.
                 self.consume();
             }
             params.push(p);
@@ -869,7 +841,6 @@ impl Parser<'_> {
         if self.at(TokenKind::Bang) {
             self.consume();
             extended = true;
-            // Optional vanilla target after !.
             if self.at(TokenKind::Str) || self.at(TokenKind::LBrace) {
                 self.capture_target_span();
             }
@@ -914,7 +885,7 @@ impl Parser<'_> {
     }
 
     fn parse_type_alias(&mut self) -> ItemKind {
-        self.consume(); // `type`
+        self.consume();
         let name = match self.expect_ident("type alias name") {
             Some(n) => n,
             None => {
@@ -955,10 +926,6 @@ impl Parser<'_> {
         self.expect_semicolon();
         ItemKind::VarReservation(VarReservation { storage, names })
     }
-
-    // ------------------------------------------------------------------
-    // Type declarations (class/struct/enum)
-    // ------------------------------------------------------------------
 
     fn parse_type_decl(&mut self) -> ItemKind {
         let single = if self.at(TokenKind::KwSingle) {
@@ -1130,7 +1097,7 @@ impl Parser<'_> {
     }
 
     fn parse_constructor_body(&mut self, access: Option<Access>) -> ConstructorDecl {
-        self.consume(); // constructor
+        self.consume();
         self.expect(TokenKind::LParen, "'('");
         let params = self.parse_params();
         self.expect(TokenKind::RParen, "')'");
@@ -1149,12 +1116,8 @@ impl Parser<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Imports
-    // ------------------------------------------------------------------
-
     fn parse_import_decl(&mut self) -> ItemKind {
-        self.consume(); // import
+        self.consume();
         let path_tok = match self.expect(TokenKind::Str, "import path string") {
             Some(t) => t,
             None => {
@@ -1188,10 +1151,6 @@ impl Parser<'_> {
         })
     }
 
-    // ------------------------------------------------------------------
-    // Statements
-    // ------------------------------------------------------------------
-
     fn parse_block(&mut self) -> BlockStmt {
         let id = self.node();
         let open = self.expect(TokenKind::LBrace, "'{'");
@@ -1207,7 +1166,6 @@ impl Parser<'_> {
             let before = self.pos;
             let s = self.parse_statement();
             if self.pos == before {
-                // Guarantee progress.
                 self.consume();
             }
             stmts.push(s);
@@ -1411,7 +1369,7 @@ impl Parser<'_> {
     }
 
     fn parse_hook_statement(&mut self) -> StmtKind {
-        self.consume(); // {
+        self.consume();
         let str_tok = match self.expect(TokenKind::Str, "vanilla variable name string") {
             Some(t) => t,
             None => {
@@ -1448,7 +1406,7 @@ impl Parser<'_> {
     }
 
     fn parse_if(&mut self) -> StmtKind {
-        self.consume(); // if
+        self.consume();
         self.expect(TokenKind::LParen, "'('");
         let cond = self.parse_expr();
         self.expect(TokenKind::RParen, "')'");
@@ -1467,7 +1425,7 @@ impl Parser<'_> {
     }
 
     fn parse_switch(&mut self) -> StmtKind {
-        self.consume(); // switch
+        self.consume();
         self.expect(TokenKind::LParen, "'('");
         let scrutinee = self.parse_expr();
         self.expect(TokenKind::RParen, "')'");
@@ -1519,7 +1477,7 @@ impl Parser<'_> {
     }
 
     fn parse_for(&mut self) -> StmtKind {
-        self.consume(); // for
+        self.consume();
         self.expect(TokenKind::LParen, "'('");
         let init = if self.at(TokenKind::Semicolon) {
             self.consume();
@@ -1595,10 +1553,6 @@ impl Parser<'_> {
             kind,
         }
     }
-
-    // ------------------------------------------------------------------
-    // Expressions
-    // ------------------------------------------------------------------
 
     pub fn parse_expr(&mut self) -> Expr {
         self.parse_ternary()
@@ -1734,7 +1688,6 @@ impl Parser<'_> {
                 },
             };
         }
-        // Assignment: lowest precedence, right-associative.
         if min_prec <= 1 && self.is_assignment_op() {
             let op_tok = self.consume();
             let op = match op_tok.kind {
@@ -1882,7 +1835,7 @@ impl Parser<'_> {
                 }
             }
             TokenKind::Lt if self.is_type_cast() => {
-                self.consume(); // <
+                self.consume();
                 let ty = self.parse_type();
                 self.expect(TokenKind::Gt, "'>'");
                 let operand = self.parse_unary();
@@ -2178,7 +2131,6 @@ impl Parser<'_> {
             span: t.span,
             name: self.text_of(t.span).to_string(),
         };
-        // Single-param lambda: `x => ...`
         if self.at(TokenKind::Arrow) {
             self.consume();
             let body = self.parse_lambda_body();
@@ -2194,7 +2146,6 @@ impl Parser<'_> {
                 }),
             };
         }
-        // Generic call: `Name<Type,...>(args)`
         if self.at(TokenKind::Lt) {
             let save = self.pos;
             if let Some(targs) = self.try_parse_generic_call_args() {
@@ -2226,7 +2177,6 @@ impl Parser<'_> {
     }
 
     fn parse_number_expr(&mut self) -> Expr {
-        // Supports an optional leading minus (rule sort order).
         let neg_tok = if self.at(TokenKind::Minus) {
             Some(self.consume())
         } else {
@@ -2373,7 +2323,7 @@ impl Parser<'_> {
     }
 
     fn parse_formatted_string(&mut self) -> Expr {
-        self.consume(); // <
+        self.consume();
         let localized = self.at(TokenKind::At);
         if localized {
             self.consume();
@@ -2482,7 +2432,7 @@ impl Parser<'_> {
                 },
                 ty: None,
             });
-            self.consume(); // =>
+            self.consume();
         } else if self.at(TokenKind::LParen) {
             self.consume();
             while !self.at(TokenKind::RParen) && !self.at(TokenKind::Eof) {
@@ -2587,10 +2537,6 @@ impl Parser<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Calls / args
-    // ------------------------------------------------------------------
-
     fn parse_call_tail(&mut self) -> (Vec<Arg>, Option<Vec<TypeRef>>) {
         self.expect(TokenKind::LParen, "'('");
         let args = self.parse_call_args();
@@ -2604,7 +2550,7 @@ impl Parser<'_> {
             let named = self.at(TokenKind::Ident) && self.peek2() == TokenKind::Colon;
             let value = if named {
                 let t = self.consume();
-                self.consume(); // :
+                self.consume();
                 let name = Some(Ident {
                     id: self.node(),
                     span: t.span,
@@ -2626,8 +2572,6 @@ impl Parser<'_> {
                 break;
             }
         }
-        // Interpolation call: a plain string positional arg followed by more
-        // positional args is a format string (architecture §9).
         let mut out = Vec::new();
         let mut i = 0;
         while i < args.len() {
@@ -2673,7 +2617,7 @@ impl Parser<'_> {
     fn try_parse_generic_call_args(&mut self) -> Option<Vec<TypeRef>> {
         let save = self.pos;
         let save_delims = self.open_delims.len();
-        self.consume(); // <
+        self.consume();
         let mut args = Vec::new();
         let mut ok = true;
         while !self.at(TokenKind::Gt) && !self.at(TokenKind::Eof) {
@@ -2706,12 +2650,8 @@ impl Parser<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Struct literals
-    // ------------------------------------------------------------------
-
     fn parse_struct_lit(&mut self) -> Expr {
-        let open = self.consume(); // {
+        let open = self.consume();
         let mut fields = Vec::new();
         let mut base = None;
         let mut single_value = None;
@@ -2720,9 +2660,8 @@ impl Parser<'_> {
                 self.consume();
                 base = Some(Box::new(self.parse_expr()));
             } else if self.at(TokenKind::Ident) && self.peek2() == TokenKind::Colon {
-                // Name-only field: X: value
                 let t = self.consume();
-                self.consume(); // :
+                self.consume();
                 let name = Ident {
                     id: self.node(),
                     span: t.span,
@@ -2739,7 +2678,7 @@ impl Parser<'_> {
                 let ty = self.try_parse_type();
                 if self.at(TokenKind::Ident) && self.peek2() == TokenKind::Colon {
                     let t = self.consume();
-                    self.consume(); // :
+                    self.consume();
                     let name = Ident {
                         id: self.node(),
                         span: t.span,
@@ -2788,10 +2727,6 @@ impl Parser<'_> {
             }),
         }
     }
-
-    // ------------------------------------------------------------------
-    // Types
-    // ------------------------------------------------------------------
 
     /// Silent type parse for lookaheads; restores state on failure.
     fn try_parse_type(&mut self) -> Option<TypeRef> {
@@ -2845,7 +2780,6 @@ impl Parser<'_> {
             false
         };
         let base = if self.at(TokenKind::LParen) {
-            // Lambda type or grouped type.
             self.consume();
             let mut params = Vec::new();
             if !self.at(TokenKind::RParen) {
@@ -2884,7 +2818,6 @@ impl Parser<'_> {
                     }),
                 });
             }
-            // Grouped: (T)[]...
             let mut current = params.pop().unwrap();
             while self.at(TokenKind::LBracket) {
                 self.consume();
@@ -2899,7 +2832,6 @@ impl Parser<'_> {
             }
             current
         } else {
-            // Name / generic / single-param lambda / union.
             let name_tok = match self.peek() {
                 TokenKind::Ident | TokenKind::KwDefine => self.consume(),
                 _ => {
@@ -2945,7 +2877,6 @@ impl Parser<'_> {
                     kind: TypeRefKind::Name(name),
                 }
             };
-            // Array suffixes.
             while self.at(TokenKind::LBracket) {
                 self.consume();
                 if self.expect(TokenKind::RBracket, "']'").is_none() {
@@ -2959,7 +2890,6 @@ impl Parser<'_> {
                     kind: TypeRefKind::Array(Box::new(current)),
                 };
             }
-            // Union: `| Type`
             let mut union = Vec::new();
             while self.at(TokenKind::Pipe) {
                 self.consume();
@@ -2980,7 +2910,6 @@ impl Parser<'_> {
                     kind: TypeRefKind::Union(members),
                 };
             }
-            // Single-param lambda: `String => void`
             if self.at(TokenKind::Arrow) {
                 self.consume();
                 let ret = self.parse_type_inner(report)?;

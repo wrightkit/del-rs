@@ -1,11 +1,3 @@
-//! deltin-rs: a Workshop-independent OSTW/DeltinScript implementation.
-//!
-//! The crate owns DEL/OSTW lexical analysis, recoverable parsing, the source
-//! model with provenance, project/import loading, semantic analysis, the typed
-//! backend-neutral HIR, diagnostics, and tooling APIs. It never owns canonical
-//! Workshop catalog data, WIR, localization, or emission — Workshop-facing
-//! names bind through the `WorkshopProvider` trait (see [`semantic::provider`]).
-
 pub mod api;
 pub mod compatibility;
 pub mod diagnostics;

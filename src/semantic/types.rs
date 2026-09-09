@@ -1,5 +1,3 @@
-//! Type system: `Type`, conversions, operator rules (architecture §14).
-
 use crate::semantic::provider::ExternalCategory;
 use crate::semantic::symbols::SymbolId;
 
@@ -132,7 +130,7 @@ impl Type {
     }
 }
 
-/// Conversion ranking for overload resolution (§13.6/§14).
+/// Conversion ranking for overload resolution.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Conversion {
     Identity = 0,
@@ -287,8 +285,8 @@ pub fn is_assignable(
     conversion(from, to, single_of, base_of).rank() < 255
 }
 
-/// Explicit cast legality (§14): casts between number-like values, to/from
-/// Any, enum casts with default discriminants.
+/// Explicit cast legality: casts between number-like values, to/from `Any`,
+/// and enum casts with default discriminants.
 pub fn cast_legal(from: &Type, to: &Type) -> bool {
     if from == to {
         return true;

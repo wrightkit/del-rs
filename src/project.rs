@@ -1,10 +1,6 @@
-//! Project model: entry file + transitive imports, deterministic ordering,
-//! cycle detection, provenance of import sites.
-//!
-//! Semantics per `docs/architecture.md` §11 with PM decision Q3 (import
-//! extension required as written; no `.del` -> `.ostw` fallback) and Q4
-//! (`!` bundled-module paths resolve relative to the importing file; `as`
-//! bindings are recorded but inert for source imports).
+//! Import paths require their written extension; `.del` is not a fallback for
+//! `.ostw`. `!` bundled-module paths resolve relative to the importing file, and
+//! `as` bindings are recorded but inert for source imports.
 
 use crate::diagnostics::{error, Diagnostic, Phase};
 use crate::span::{FileId, SourceMap, Span};
@@ -77,7 +73,6 @@ pub fn load_project_with_overlay(
         by_canonical: HashMap::new(),
     };
 
-    // Entry file: explicit entry or ds.toml entry_point.
     let entry_path = opts
         .entry
         .or_else(|| config.as_ref().and_then(|c| c.entry_point.clone()))
@@ -89,7 +84,6 @@ pub fn load_project_with_overlay(
     };
 
     let entry_id = loader.load_file(&entry_abs, None);
-    // Post-order: the entry file itself is appended after its imports.
     if !loader.files.contains(&entry_id) {
         loader.files.push(entry_id);
     }
@@ -216,11 +210,9 @@ impl Loader<'_> {
     /// the import that brought this file in (None for the entry).
     fn load_file(&mut self, abs: &Path, importer_span: Option<Span>) -> FileId {
         let canonical = abs.canonicalize().unwrap_or_else(|_| abs.to_path_buf());
-        // Already loaded: record the import edge and return.
         if let Some(id) = self.by_canonical.get(&canonical) {
             return *id;
         }
-        // Cycle detection.
         if let Some(pos) = self.in_progress.iter().position(|(p, _)| *p == canonical) {
             let cycle: Vec<String> = self.in_progress[pos..]
                 .iter()
@@ -255,7 +247,6 @@ impl Loader<'_> {
                         span,
                         format!("missing import target: {} ({e})", abs.display()),
                     ));
-                    // Register a placeholder file so import edges stay consistent.
                     let id = self.sources.add_file(name, String::new());
                     self.by_canonical.insert(canonical.clone(), id);
                     return id;
@@ -287,27 +278,18 @@ impl Loader<'_> {
         };
         self.diagnostics.extend(diags);
 
-        // Imports in source order; DFS post-order.
         for imp in imports_of(&ast) {
             match imp.kind {
                 crate::syntax::ast::ImportKind::Source
                 | crate::syntax::ast::ImportKind::BundledModule => {
                     let path = imp.path.strip_prefix('!').unwrap_or(&imp.path);
-                    let import_abs = if imp.kind == crate::syntax::ast::ImportKind::BundledModule {
-                        // `!` bundled modules: resolve relative to the
-                        // importing file's directory (PM Q4; corpus layout).
-                        abs.parent().unwrap_or(&self.root).join(path)
-                    } else {
-                        abs.parent().unwrap_or(&self.root).join(path)
-                    };
+                    let import_abs = abs.parent().unwrap_or(&self.root).join(path);
                     let imported = self.load_file(&import_abs, Some(imp.span));
                     if !self.files.contains(&imported) {
                         self.files.push(imported);
                     }
                 }
                 _ => {
-                    // .json / .lobby settings imports: recorded, not loaded
-                    // by the source implementation (workshop-lowering/compiler-utility).
                     let import_abs = abs.parent().unwrap_or(&self.root).join(&imp.path);
                     let canonical = import_abs.canonicalize().unwrap_or(import_abs);
                     let imported = self.sources.by_name(&canonical).unwrap_or_else(|| {

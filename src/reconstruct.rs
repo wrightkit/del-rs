@@ -1,40 +1,8 @@
-//! WIR → OSTW reconstruction (#125).
+//! Reconstruct canonical OSTW source from validated Workshop IR.
 //!
-//! The reverse-compilation direction of the declared Workshop surface: a
-//! validated [`wir::Program`] is converted into deterministic, canonical
-//! OSTW source that the native [`crate::compile_with_semantics`] source implementation
-//! accepts and re-lowers to semantically equivalent Workshop (the declared
-//! #119 normalization contract; see the integration suite in
-//! `tests/workshop_source.rs`).
-//!
-//! Design:
-//!
-//! * **Total classification first.** [`reconstruct`] runs a classification
-//!   pre-pass over every variable name, subroutine, rule, action, and value
-//!   before emitting anything. Any WIR construct outside the declared
-//!   reconstruction surface produces a structured [`ReconstructError`]; the
-//!   result is an error list and *no* partial or misleading OSTW source is
-//!   ever produced.
-//! * **No speculative recovery.** Classes, macros, functions, project
-//!   structure, variable types/indexes, and original formatting are not
-//!   recovered; the emitted text is low-level canonical OSTW over the
-//!   source implementation's accepted surface. Variables declare the permissive
-//!   universal `Any` type (the WIR carries no type information; both the
-//!   native source implementation and the pinned v3.4.0 reference accept it).
-//!   Variable-table identity (names, slots) is outside the declared
-//!   semantic comparison (the #119 contract).
-//! * **Canonical bindings only.** OSTW source names are derived by reversing
-//!   the existing [`crate::signature`] binding table (OSTW source name ↔
-//!   canonical catalog id); enum domains/members reverse the enum bindings
-//!   the same way. Every emitted name is validated against the canonical
-//!   [`Catalog`], never invented here. Arithmetic (catalog `add`/`subtract`/
-//!   `multiply`/`divide`) emits as the real OSTW infix operators
-//!   `+ - * /` — the pinned reference rejects callable `Add(...)` forms —
-//!   and the shared Workshop emitter canonicalizes them back to the catalog
-//!   spellings, so the round trip is byte-stable.
-//! * **Determinism.** All arenas are iterated in index order and the output
-//!   formatting is fixed, so the same validated WIR always yields
-//!   byte-identical OSTW text.
+//! Classification is total and fail-closed: unsupported constructs produce
+//! structured errors before emission, without partial output. Emitted names
+//! come from the existing OSTW-to-catalog bindings, and output is deterministic.
 
 use std::collections::HashSet;
 use std::fmt::Write;
@@ -113,10 +81,6 @@ pub fn reconstruct(
     }
     Ok(Emitter::new(program, catalog).run())
 }
-
-// ---------------------------------------------------------------------------
-// Reverse binding lookups (OSTW source name <-> canonical catalog identity).
-// ---------------------------------------------------------------------------
 
 /// The OSTW source name for a canonical catalog action id, or `None` when no
 /// binding exists (the action is not representable on the declared surface).
@@ -211,10 +175,6 @@ pub fn bound_enum_domains() -> Vec<EnumDomainBindingRev> {
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Classification (total pre-pass; collects every structured rejection).
-// ---------------------------------------------------------------------------
-
 /// The comparison operators that render infix in both OSTW and the shared
 /// Workshop emitter.
 const COMPARISON_OPS: &[&str] = &["==", "!=", "<", "<=", ">", ">="];
@@ -253,7 +213,6 @@ struct Classifier<'a> {
     program: &'a wir::Program,
     catalog: &'a Catalog,
     errors: Vec<ReconstructError>,
-    /// Subroutine id → its body rule id, when the program defines one.
     subroutine_rules: Vec<Option<wir::RuleId>>,
 }
 
@@ -564,7 +523,7 @@ impl<'a> Classifier<'a> {
             }
             Action::Call { name, args, .. } => {
                 if name == "abort" && args.is_empty() {
-                    return; // representable as `return;`
+                    return;
                 }
                 match action_ostw_name(name) {
                     Some(_) => {
@@ -617,7 +576,7 @@ impl<'a> Classifier<'a> {
             | ModifyOp::Multiply
             | ModifyOp::Divide
             | ModifyOp::Modulo => {}
-            ModifyOp::AppendToArray => {} // representable as `receiver.append(value)`
+            ModifyOp::AppendToArray => {}
             ModifyOp::RaiseToPower
             | ModifyOp::Min
             | ModifyOp::Max
@@ -825,15 +784,10 @@ impl<'a> Classifier<'a> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Emission (runs only after classification succeeds).
-// ---------------------------------------------------------------------------
-
 struct Emitter<'a> {
     program: &'a wir::Program,
     catalog: &'a Catalog,
     out: String,
-    /// Subroutine id → its body rule id.
     subroutine_rules: Vec<Option<wir::RuleId>>,
 }
 

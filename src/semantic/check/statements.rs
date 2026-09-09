@@ -1,5 +1,3 @@
-//! Statement and local-declaration checking.
-
 use super::*;
 use crate::semantic::symbols::*;
 use crate::semantic::types::*;
@@ -21,7 +19,6 @@ impl Checker<'_> {
             }
             StmtKind::Var(v) => {
                 let ty = self.decl_type(v);
-                // Declare the local (if not already collected for this scope).
                 let already = self
                     .program
                     .tables
@@ -155,7 +152,6 @@ impl Checker<'_> {
                 }
                 if let Some(step) = &f.step {
                     if is_auto_for {
-                        // The step is a value expression (auto-for increment).
                         if let StmtKind::Expr(e) = &step.kind {
                             let _ = self.check_expr(e);
                         }

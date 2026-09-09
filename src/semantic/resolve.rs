@@ -1,5 +1,3 @@
-//! Name resolution results shared between the checker and the API.
-
 use crate::semantic::provider::ExternalBinding;
 use crate::semantic::symbols::SymbolId;
 use crate::semantic::types::Type;

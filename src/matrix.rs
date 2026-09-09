@@ -1,9 +1,3 @@
-//! Compatibility support matrix: schema, loading, and mechanical validation.
-//!
-//! The matrix lives in `docs/support-matrix.toml` and is embedded with
-//! `include_str!`, so `deltin_rs::matrix::load_and_validate()` works from any
-//! directory and the CLI can check it without reading the repo layout.
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -142,8 +136,6 @@ pub fn load_and_validate() -> Result<SupportMatrix, Vec<String>> {
                 entry.id, entry.state
             ));
         }
-        // State sanity: workshop-lowering category entries should not claim
-        // Source support (the parser/semantic pipeline does not lower to Workshop here).
         if entry.category == Category::WorkshopLowering && entry.state.is_supported() {
             problems.push(format!(
                 "entry {}: workshop-lowering category cannot claim supported state {:?}",
@@ -158,7 +150,7 @@ pub fn load_and_validate() -> Result<SupportMatrix, Vec<String>> {
     }
 }
 
-/// Number of entries per state (useful for CLI reporting and the #7 gate).
+/// Number of entries per state for CLI reporting.
 pub fn state_counts(matrix: &SupportMatrix) -> Vec<(State, usize)> {
     State::ALL
         .iter()
@@ -178,8 +170,6 @@ mod tests {
         let matrix = load_and_validate().expect("matrix must validate");
         assert!(!matrix.entries.is_empty());
         assert!(!matrix.meta.upstream_repo.is_empty());
-        // Every category/state in the file is from the fixed sets by
-        // construction (serde), and evidence paths are checked above.
     }
 
     #[test]

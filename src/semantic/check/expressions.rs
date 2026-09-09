@@ -1,5 +1,3 @@
-//! Expression typing, expression-local semantic rules, and lvalues.
-
 use super::*;
 use crate::semantic::provider::*;
 use crate::semantic::resolve::Resolution;
@@ -39,7 +37,6 @@ impl Checker<'_> {
         }
         if let ExprKind::StructLit(sl) = &expr.kind {
             if let Type::Struct(sid) = &expected {
-                // Struct literals are typed against a known struct type.
                 let fields: Vec<(String, Type)> = self
                     .program
                     .type_decls
@@ -80,10 +77,6 @@ impl Checker<'_> {
         }
         ty
     }
-
-    // ------------------------------------------------------------------
-    // Expressions
-    // ------------------------------------------------------------------
 
     pub fn check_expr(&mut self, expr: &Expr) -> Type {
         let ty = self.check_expr_inner(expr);
@@ -306,8 +299,6 @@ impl Checker<'_> {
                 }
                 let ty = self.anonymous_struct();
                 if let Type::Struct(sid) = &ty {
-                    // Register the literal's fields as members so member
-                    // access on the anonymous struct resolves.
                     for f in &sl.fields {
                         let value_ty = self.check_expr(&f.value);
                         let fid = self.program.tables.symbols.len() as SymbolId;
@@ -634,7 +625,7 @@ impl Checker<'_> {
             self.lookup_type(&first, self.scope())
         };
         let Some(enum_sym) = enum_sym else {
-            return; // unknown enum: permissive (external)
+            return;
         };
         if self.program.tables.symbol(enum_sym).kind != SymbolKind::Enum {
             return;
@@ -782,10 +773,6 @@ impl Checker<'_> {
                 .unwrap_or(false),
         }
     }
-
-    // ------------------------------------------------------------------
-    // Identifiers and members
-    // ------------------------------------------------------------------
 
     pub(super) fn check_lvalue(&mut self, target: &Expr) -> bool {
         match &target.kind {

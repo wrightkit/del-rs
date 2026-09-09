@@ -75,7 +75,6 @@ impl SourceFile {
 
     pub fn line_col(&self, offset: u32) -> LineCol {
         let offset = offset.min(self.text.len() as u32);
-        // Binary search for the last line start <= offset.
         let idx = match self.line_starts.binary_search(&offset) {
             Ok(i) => i,
             Err(i) => i - 1,
@@ -83,7 +82,6 @@ impl SourceFile {
         let line_start = self.line_starts[idx];
         LineCol {
             line: (idx + 1) as u32,
-            // Column in Unicode scalar values.
             col: self.text[line_start as usize..offset as usize]
                 .chars()
                 .count() as u32
