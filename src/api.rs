@@ -1,6 +1,3 @@
-//! Public library API (architecture §17): the stable surface for Wright and
-//! other consumers. Everything is re-exported at the crate root.
-
 use crate::diagnostics::Diagnostic;
 use crate::hir::oracle::{run_oracle, OracleEntry, OracleOptions, OracleResult};
 use crate::hir::HirProgram;
@@ -14,8 +11,6 @@ use crate::span::{FileId, SourceMap, Span};
 use crate::syntax::parse_source;
 use crate::syntax::token::Token;
 use std::path::Path;
-
-// ---- parsing ----
 
 pub struct ParseOutput {
     pub tokens: Vec<Token>,
@@ -32,8 +27,6 @@ pub fn parse_source_file(file: FileId, text: &str) -> ParseOutput {
     }
 }
 
-// ---- projects ----
-
 pub fn load_project_api(opts: ProjectOptions) -> Project {
     load_project(opts)
 }
@@ -42,8 +35,6 @@ pub fn project_files(project: &Project) -> impl Iterator<Item = FileId> + '_ {
     project.files.iter().copied()
 }
 
-// ---- semantic ----
-
 pub fn check_project_api(project: &Project, provider: &dyn WorkshopProvider) -> SemanticProgram {
     crate::semantic::check_project(project, provider)
 }
@@ -51,8 +42,6 @@ pub fn check_project_api(project: &Project, provider: &dyn WorkshopProvider) -> 
 pub fn check_project_default(project: &Project) -> SemanticProgram {
     crate::semantic::check_project(project, &NoopProvider::new())
 }
-
-// ---- HIR ----
 
 pub fn lower_to_hir(program: &SemanticProgram) -> (HirProgram, Vec<Diagnostic>) {
     crate::hir::lower::lower(program)
@@ -71,11 +60,8 @@ pub fn lower_to_wir(
     crate::workshop::lower_to_wir(hir, sources)
 }
 
-// ---- queries ----
-
 /// The symbol bound at `offset` in `file` (via the resolution table).
 pub fn symbol_at(program: &SemanticProgram, file: FileId, offset: u32) -> Option<SymbolId> {
-    // Find a resolution whose span contains the offset.
     for (node, res) in &program.resolution {
         if let Resolution::Symbol(sid) = res {
             let sym = program.tables.symbol(*sid);
@@ -323,13 +309,9 @@ pub fn declaration(
     program.tables.symbols.get(symbol as usize)
 }
 
-// ---- oracle ----
-
 pub fn run_oracle_api(hir: &HirProgram, entry: OracleEntry, opts: OracleOptions) -> OracleResult {
     run_oracle(hir, entry, opts)
 }
-
-// ---- one-shot convenience ----
 
 pub struct CheckReport {
     pub project: Project,
@@ -414,8 +396,6 @@ pub fn inspect_path(path: &Path, file: &Path, offset: u32) -> InspectReport {
         resolution,
     }
 }
-
-// ---- matrix ----
 
 pub fn load_matrix() -> Result<crate::matrix::SupportMatrix, toml::de::Error> {
     crate::matrix::load()

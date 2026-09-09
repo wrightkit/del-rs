@@ -50,13 +50,11 @@ pub const DIAGNOSTIC_CAP: usize = 200;
 
 /// Registry of all diagnostic codes: (code, one-line documentation).
 pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
-    // Lexer
     ("LX001", "invalid character"),
     ("LX002", "unterminated string"),
     ("LX003", "unterminated block comment"),
     ("LX004", "invalid number literal"),
     ("LX099", "too many lexical errors; stopping"),
-    // Parser
     ("PR001", "unexpected token"),
     ("PR002", "expected a specific token"),
     ("PR010", "expected identifier"),
@@ -78,13 +76,11 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("PR036", "malformed rule header"),
     ("PR037", "malformed struct literal"),
     ("PR099", "too many parse errors; stopping"),
-    // Project
     ("PJ001", "import cycle"),
     ("PJ002", "missing import target"),
     ("PJ003", "failed to read file"),
     ("PJ004", "invalid ds.toml"),
     ("PJ099", "too many project errors; stopping"),
-    // Semantic
     ("SM001", "duplicate declaration in the same scope"),
     ("SM002", "local declared after use"),
     ("SM003", "unknown name"),
@@ -157,7 +153,6 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("SM052", "condition must be bool-compatible"),
     ("SM053", "positional argument follows a named argument"),
     ("SM099", "too many semantic errors; stopping"),
-    // HIR validation
     (
         "HI001",
         "node span is invalid (unknown file or out-of-range offsets)",
@@ -201,10 +196,8 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
         "HI099",
         "HIR has validation errors; oracle refuses to execute",
     ),
-    // Canonical Workshop integration
     ("WK001", "canonical Workshop validation failed"),
     ("WK002", "canonical Workshop emission failed"),
-    // Oracle
     ("OR001", "stale reference: use of a deleted object"),
     ("OR002", "execution steps limit exceeded"),
     ("OR003", "recursion depth limit exceeded"),

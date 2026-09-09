@@ -1,9 +1,3 @@
-//! Prepare DEL semantic/provider bindings for Workshop lowering.
-//!
-//! This bridge deliberately sits between semantic analysis and the
-//! backend-neutral HIR. Provider bindings remain DEL-owned context data and do
-//! not become part of HIR.
-
 use crate::semantic::provider::ExternalBinding;
 use crate::semantic::resolve::Resolution;
 use crate::semantic::SemanticProgram;

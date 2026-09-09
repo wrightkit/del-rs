@@ -1,7 +1,7 @@
-//! Semantic oracle: a bounded tree-walking interpreter over HIR
-//! (architecture §16). Distinguishes correct/incorrect high-level behavior
-//! before any backend exists. Not a Workshop runtime: external calls are
-//! holes; events never fire.
+//! Bounded HIR oracle for high-level behavior.
+//!
+//! This is not a Workshop runtime: external calls are holes and events never
+//! fire.
 
 use crate::diagnostics::Diagnostic;
 use crate::hir::*;
@@ -284,7 +284,6 @@ impl<'a> Oracle<'a> {
                 if *op == crate::syntax::ast::AssignOp::Assign {
                     self.assign(*target, v, e.span)
                 } else {
-                    // Compound assignment reads the target first.
                     let current = self.expr(*target)?;
                     let combined = self.binary_assign_op(*op, current, v, e.span)?;
                     self.assign(*target, combined, e.span)
@@ -343,7 +342,6 @@ impl<'a> Oracle<'a> {
             HirMemberTarget::Field(_) | HirMemberTarget::Invoke => Ok(base),
             HirMemberTarget::Key => match base {
                 OracleValue::EnumValue { member: m, .. } => {
-                    // Default discriminants: sequential integers.
                     Ok(OracleValue::Number(m.member as f64))
                 }
                 _ => Err(OracleError::TypeError {
@@ -432,23 +430,18 @@ impl<'a> Oracle<'a> {
                 self.globals.insert(var, value.clone());
                 Ok(value)
             }
-            HirExprKind::Member { base, .. } => {
-                // Struct field mutation / playervar writes: best-effort
-                // (fields are stored on the value; class fields are kept on
-                // the object).
-                match self.expr(base)? {
-                    OracleValue::Object {
-                        class,
-                        generation,
-                        deleted,
-                        ..
-                    } => {
-                        let _ = (class, generation, deleted);
-                        Ok(value)
-                    }
-                    _ => Ok(value),
+            HirExprKind::Member { base, .. } => match self.expr(base)? {
+                OracleValue::Object {
+                    class,
+                    generation,
+                    deleted,
+                    ..
+                } => {
+                    let _ = (class, generation, deleted);
+                    Ok(value)
                 }
-            }
+                _ => Ok(value),
+            },
             _ => Ok(value),
         }
     }
@@ -470,7 +463,6 @@ impl<'a> Oracle<'a> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        // Field initializers.
         let mut fields = fields;
         if let Some(c) = self.hir.classes.get(class as usize) {
             for f in &c.fields {
@@ -483,7 +475,6 @@ impl<'a> Oracle<'a> {
                 }
             }
         }
-        // Constructor invocation (first constructor found).
         let _ = args;
         Ok(OracleValue::Object {
             class,
@@ -585,7 +576,6 @@ impl<'a> Oracle<'a> {
                 message: format!("unknown function {fid}"),
             })?;
         let saved = self.globals.clone();
-        // Bind params by name (param vars were registered at lowering).
         for (i, p) in func.params.iter().enumerate() {
             let v = args.get(i).cloned().unwrap_or(OracleValue::Null);
             let vid = self
@@ -793,7 +783,6 @@ impl<'a> Oracle<'a> {
                 let mut hit = false;
                 for arm in arms {
                     if arm.label.is_none() {
-                        // `default:` runs only when no case has matched.
                         if hit {
                             continue;
                         }
@@ -844,7 +833,6 @@ impl<'a> Oracle<'a> {
 
 /// Run an oracle entry point.
 pub fn run_oracle(hir: &HirProgram, entry: OracleEntry, opts: OracleOptions) -> OracleResult {
-    // Refuse to run with HIR validation errors.
     if !crate::hir::validate::validate(hir).is_empty() {
         return OracleResult {
             value: None,

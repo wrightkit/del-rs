@@ -1,5 +1,3 @@
-//! Lowering: SemanticProgram -> HirProgram (provenance-preserving).
-
 use crate::hir::*;
 use crate::semantic::resolve::{BuiltinMember, Resolution};
 use crate::semantic::symbols::{SymbolId, SymbolKind};
@@ -14,13 +12,11 @@ pub struct Lowerer<'a> {
     next_expr: HirExprId,
     next_stmt: u32,
     next_block: u32,
-    /// Builder-side expression registry (moved into HirProgram at the end).
     exprs: Vec<HirExpr>,
     pub symbol_func: HashMap<SymbolId, HirFuncId>,
     pub symbol_class: HashMap<SymbolId, HirClassId>,
     pub symbol_enum: HashMap<SymbolId, HirEnumId>,
     pub symbol_var: HashMap<SymbolId, HirVarId>,
-    /// var name node id -> HirVarId (locals during body lowering).
     local_vars: HashMap<NodeId, HirVarId>,
 }
 
@@ -86,7 +82,6 @@ impl Lowerer<'_> {
     }
 
     fn run(&mut self) {
-        // Pass 1: declare top-level vars, functions, classes, enums.
         for file in &self.program.project.files {
             if let Some(parsed) = self.program.asts.get(file) {
                 for item in &parsed.items {
@@ -94,7 +89,6 @@ impl Lowerer<'_> {
                 }
             }
         }
-        // Pass 2: lower bodies.
         for file in &self.program.project.files {
             if let Some(parsed) = self.program.asts.get(file) {
                 for item in &parsed.items {
@@ -333,14 +327,12 @@ impl Lowerer<'_> {
                     else {
                         return;
                     };
-                    // Base.
                     let base = t.base.as_ref().map(|b| self.sem_type(b));
                     if let Some(Type::Class(bsym)) = base {
                         if let Some(bcid) = self.symbol_class.get(&bsym) {
                             self.hir.classes[cid as usize].base = Some(*bcid);
                         }
                     }
-                    // Fields.
                     for m in &t.members {
                         if let MemberDeclKind::Field(v) = &m.kind {
                             let init = v.init.as_ref().map(|(_, e)| self.expr(e));
@@ -354,7 +346,6 @@ impl Lowerer<'_> {
                             self.hir.classes[cid as usize].fields.push(field);
                         }
                     }
-                    // Methods.
                     for m in &t.members {
                         if let MemberDeclKind::Method(f) = &m.kind {
                             let Some(fid) = self
@@ -480,10 +471,6 @@ impl Lowerer<'_> {
         });
         vid
     }
-
-    // ------------------------------------------------------------------
-    // Statements
-    // ------------------------------------------------------------------
 
     fn lower_block(&mut self, b: &BlockStmt) -> HirBlock {
         let mut stmts = Vec::new();
@@ -700,10 +687,6 @@ impl Lowerer<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Expressions
-    // ------------------------------------------------------------------
-
     fn lower_expr(&mut self, e: &Expr) -> HirExprKind {
         match &e.kind {
             ExprKind::Number(n) => {
@@ -728,8 +711,6 @@ impl Lowerer<'_> {
                     if let Some(vid) = self.symbol_var.get(sid) {
                         return HirExprKind::VarRef { var: *vid };
                     }
-                    // Locals/params registered during body lowering by their
-                    // declaration node.
                     let decl = self.program.tables.symbol(*sid).decl;
                     if let Some(vid) = self.local_vars.get(&decl) {
                         return HirExprKind::VarRef { var: *vid };
@@ -874,7 +855,6 @@ impl Lowerer<'_> {
                 if let Some(vid) = self.symbol_var.get(sid) {
                     return HirMemberTarget::PlayervarAccess(*vid);
                 }
-                // Class field.
                 if let Some(owner) = sym.owner {
                     if let Some(cid) = self.symbol_class.get(&owner) {
                         let fields = &self.hir.classes[*cid as usize].fields;

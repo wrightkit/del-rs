@@ -1,22 +1,17 @@
-//! Token kinds and token stream.
-
 use crate::span::Span;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TokenKind {
-    // Trivia (retained; skipped by the parser, discoverable for tooling).
     Whitespace,
     LineComment,
     BlockComment,
     DocComment,
 
-    // Literals.
     Int,
     Real,
     Str,
     Bool,
 
-    // Identifiers and keywords.
     Ident,
     KwRule,
     KwDefine,
@@ -65,7 +60,6 @@ pub enum TokenKind {
     KwVoid,
     KwJson,
 
-    // Punctuation and operators.
     LParen,
     RParen,
     LBrace,
@@ -107,7 +101,6 @@ pub enum TokenKind {
     Question,
     At,
 
-    // Recovery.
     Error,
     Eof,
 }

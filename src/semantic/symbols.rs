@@ -1,5 +1,3 @@
-//! Symbols and scopes (architecture §13.2).
-
 use crate::semantic::types::Type;
 use crate::span::Span;
 use crate::syntax::ast::NodeId;
@@ -113,7 +111,6 @@ impl SymbolTable {
 
     pub fn declare(&mut self, scope: ScopeId, sym: Symbol) -> Result<SymbolId, SymbolId> {
         let id = self.symbols.len() as SymbolId;
-        // Duplicate in the same scope -> error (SM001); returns existing id.
         if let Some(existing) = self.scopes[scope as usize].entries.get(&sym.name) {
             return Err(existing[0]);
         }

@@ -1,5 +1,3 @@
-//! Type, name, member, provider, and overload resolution.
-
 use super::*;
 use crate::semantic::provider::*;
 use crate::semantic::resolve::{BuiltinMember, Resolution};
@@ -254,7 +252,6 @@ impl Checker<'_> {
             if sym.kind == SymbolKind::EnumMember {
                 if let Some(info) = self.program.enum_members.get(&mid) {
                     if !info.field_types.is_empty() {
-                        // Payload-bearing members construct values.
                         ty = Type::FunctionValue(FunctionType {
                             params: info.field_types.clone(),
                             ret: Box::new(sym.ty.clone()),
@@ -320,7 +317,6 @@ impl Checker<'_> {
             );
             return Type::Any;
         }
-        // Playervar access via player expressions.
         if matches!(base_ty, Type::Player)
             || matches!(base_ty, Type::Array(inner) if **inner == Type::Player)
         {
@@ -338,7 +334,6 @@ impl Checker<'_> {
             );
             return Type::Any;
         }
-        // Provider / error path.
         self.member_or_provider(expr, base_ty, base, name)
     }
 
@@ -467,7 +462,6 @@ impl Checker<'_> {
     pub(super) fn playervar_symbol(&self, name: &str) -> Option<SymbolId> {
         let mut candidates = self.program.tables.project_lookup(name);
         if candidates.is_empty() {
-            // File scopes are children of the project scope: search them.
             for scope in &self.program.tables.scopes {
                 if scope.kind == ScopeKind::File || scope.kind == ScopeKind::Rule {
                     if let Some(ids) = scope.entries.get(name) {
@@ -503,10 +497,6 @@ impl Checker<'_> {
             }
         }
     }
-
-    // ------------------------------------------------------------------
-    // Index
-    // ------------------------------------------------------------------
 
     pub(super) fn check_index(&mut self, expr: &Expr, base: &Expr, index: &Expr) -> Type {
         let base_ty = self.check_expr(base);
@@ -586,10 +576,6 @@ impl Checker<'_> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Calls and overloads
-    // ------------------------------------------------------------------
-
     pub(super) fn check_call(&mut self, expr: &Expr, call: &CallExpr) -> Type {
         let mut seen_named = false;
         for arg in &call.args {
@@ -658,7 +644,6 @@ impl Checker<'_> {
                     self.record(expr, ty.clone(), Some(Resolution::None));
                     return ty;
                 }
-                // Undeclared callee: provider (permissive).
                 self.external_call(expr, call, Vec::new(), &id.name, &arg_types)
             }
             ExprKind::Member { base, name } => {
@@ -673,12 +658,10 @@ impl Checker<'_> {
                         _ => None,
                     });
                 if let Some(bm) = builtin {
-                    // Language-owned array members are callable.
                     return self.check_builtin_call(expr, &bm, base, call, &arg_types);
                 }
                 match member_res {
                     Type::FunctionValue(ft) => {
-                        // Ref-method calls require a ref context (SM044).
                         let mid =
                             self.program
                                 .resolution
@@ -699,8 +682,6 @@ impl Checker<'_> {
                             if matches!(sym.kind, SymbolKind::Function | SymbolKind::Macro)
                                 && sym.flags.ref_
                             {
-                                // Struct-modifying receiver must be a mutable
-                                // variable.
                                 if let Some(base_sym) = self.lvalue_symbol(base) {
                                     let bs = self.program.tables.symbol(base_sym);
                                     if bs.flags.const_init || bs.owner.is_some() {
@@ -726,7 +707,6 @@ impl Checker<'_> {
                     }
                     Type::Error | Type::External(_) | Type::Any => {
                         if let Some(bm) = builtin {
-                            // Language-owned array members are callable.
                             self.check_builtin_call(expr, &bm, base, call, &arg_types)
                         } else if base_ty.is_external()
                             || base_ty.is_error()
@@ -803,7 +783,6 @@ impl Checker<'_> {
         call: &CallExpr,
         arg_types: &[Type],
     ) {
-        // Named args must exist; positional count within bounds.
         let named: Vec<&Ident> = call.args.iter().filter_map(|a| a.name.as_ref()).collect();
         for n in &named {
             if !ft.params_names_contains(&n.name) {
@@ -961,12 +940,10 @@ impl Checker<'_> {
                 _ => continue,
             };
             let (param_names, param_defaults) = self.param_info(sid);
-            // Arity: positionals fill in order; named fill by name.
             let positional = call.args.iter().filter(|a| a.name.is_none()).count();
             if positional > ft.params.len() {
                 continue;
             }
-            // Fill a param->arg-type map.
             let mut fills: HashMap<usize, usize> = HashMap::new();
             let mut pi = 0usize;
             let mut ok = true;
@@ -996,7 +973,6 @@ impl Checker<'_> {
             if !ok {
                 continue;
             }
-            // Every required (default-less) parameter must be filled.
             let mut required_ok = true;
             for (i, has_default) in param_defaults.iter().enumerate() {
                 if !has_default && !fills.contains_key(&i) {
@@ -1007,7 +983,6 @@ impl Checker<'_> {
             if !required_ok {
                 continue;
             }
-            // Rank.
             let mut rank: u32 = 0;
             let mut conv_ok = true;
             for (idx, ai) in &fills {
@@ -1154,7 +1129,6 @@ trait ParamNames {
 }
 impl ParamNames for FunctionType {
     fn params_names_contains(&self, _name: &str) -> bool {
-        // Names are not stored on FunctionType; arity-only checks apply here.
         false
     }
 }

@@ -1,4 +1,4 @@
-//! Lexer: text -> token stream (trivia retained) + diagnostics.
+//! Lexer.
 //!
 //! Evidence base: `docs/syntax-notes.md` (pinned upstream
 //! ItsDeltin/Overwatch-Script-To-Workshop). Recovery policy: never panic,
@@ -234,7 +234,6 @@ impl Lexer<'_> {
             .chars
             .get(self.pos)
             .map_or(self.text.len(), |(i, _)| *i);
-        // Re-derive the token text by scanning back from the current offset.
         let end = start_off;
         let mut begin = end;
         while begin > 0 {
@@ -297,8 +296,6 @@ impl Lexer<'_> {
         }
     }
 
-    /// Lex a string body. `pos` points at the quote char; for prefixed strings
-    /// (`@"`, `$"`) the prefix char is one behind `pos`.
     fn string(
         &mut self,
         quote: char,
@@ -307,7 +304,6 @@ impl Lexer<'_> {
         let form = form.unwrap_or(StrForm::Plain);
         let start = self.pos;
         if form != StrForm::Plain {
-            // Consume the @ / $ prefix.
             self.advance();
         }
         debug_assert_eq!(self.peek(0), Some(quote));

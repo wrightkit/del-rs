@@ -1,7 +1,7 @@
 //! Typed AST for DEL/OSTW source. Every node carries `id` + `span`.
 //!
-//! Shape per `docs/architecture.md` §9; authored identifiers and literals are
-//! retained verbatim. `NodeId` is a monotonic counter shared per file.
+//! Authored identifiers and literals are retained verbatim. `NodeId` is a
+//! monotonic counter shared per file.
 
 use crate::span::Span;
 
@@ -44,10 +44,6 @@ pub enum ItemKind {
         consumed: Span,
     },
 }
-
-// ---------------------------------------------------------------------------
-// Declarations
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct RuleDecl {
@@ -156,7 +152,7 @@ pub struct FuncAttrs {
     pub override_: bool,
     pub recursive: bool,
     pub persist: bool,
-    /// `ref` attribute (ref methods per inventory `semantic.struct-ref-methods`).
+    /// `ref` attribute for reference methods.
     pub ref_: bool,
     pub storage: Option<StorageModifier>,
     pub subroutine: Option<SubroutineInfo>,
@@ -252,10 +248,6 @@ pub struct VarReservation {
     pub names: Vec<Expr>,
 }
 
-// ---------------------------------------------------------------------------
-// Type declarations
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TypeDeclKind {
     Class,
@@ -270,7 +262,7 @@ pub struct TypeDecl {
     pub name: Ident,
     pub type_params: Vec<TypeParamDecl>,
     /// `class B : A` — single base; extra comma-separated types are recorded
-    /// but semantically inert per PM decision Q10.
+    /// but semantically inert.
     pub base: Option<TypeRef>,
     pub implements: Vec<TypeRef>,
     pub members: Vec<MemberDecl>,
@@ -303,10 +295,6 @@ pub struct TypeAliasDecl {
     pub name: Ident,
     pub target: TypeRef,
 }
-
-// ---------------------------------------------------------------------------
-// Statements
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct Stmt {
@@ -378,10 +366,6 @@ pub struct SwitchArm {
     pub stmts: Vec<Stmt>,
     pub span: Span,
 }
-
-// ---------------------------------------------------------------------------
-// Expressions
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct Expr {
@@ -604,10 +588,6 @@ pub enum AssignOp {
     Pow,
 }
 
-// ---------------------------------------------------------------------------
-// Type references
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub struct TypeRef {
     pub id: NodeId,
@@ -624,7 +604,7 @@ pub enum TypeRefKind {
         args: Vec<TypeRef>,
     },
     Function(FunctionTypeRef),
-    /// `T | U` anonymous struct unions (parse-only per PM decision Q11).
+    /// `T | U` anonymous struct unions (parse-only).
     Union(Vec<TypeRef>),
     Error,
 }

@@ -1,8 +1,3 @@
-//! DEL-owned Workshop lowering boundary.
-//!
-//! Binding preparation and canonical WIR lowering intentionally live in
-//! separate internal modules. The public entry points remain stable here.
-
 mod context;
 mod lower;
 

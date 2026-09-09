@@ -1,4 +1,4 @@
-//! Typed backend-neutral DEL HIR (architecture §15).
+//! Typed backend-neutral DEL HIR.
 //!
 //! Captures high-level runtime intent — allocation/deallocation, reference
 //! identity, virtual dispatch, recursion, lambdas with captures, storage

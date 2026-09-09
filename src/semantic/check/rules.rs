@@ -1,5 +1,3 @@
-//! Rule, enum, and body-level semantic policies.
-
 use super::*;
 use crate::semantic::types::is_constant_or_parallel;
 use crate::syntax::ast::*;

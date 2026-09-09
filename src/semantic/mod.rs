@@ -1,8 +1,3 @@
-//! Semantic analysis: declaration collection, type resolution, checking.
-//!
-//! `check_project` runs: (A) collect all declarations into symbols/scopes,
-//! (B) resolve declaration types, (C) check rule/function bodies.
-
 pub mod check;
 pub mod provider;
 pub mod resolve;
@@ -89,7 +84,6 @@ pub struct Builder<'a> {
 
     pub init_scopes: HashMap<NodeId, ScopeId>,
     pub init_symbols: HashMap<NodeId, SymbolId>,
-    // Declaration tables for phase B.
     var_decls: HashMap<NodeId, VarDeclKind>,
     function_decls: HashMap<NodeId, (FunctionDecl, ScopeId)>,
     type_decl_refs: HashMap<SymbolId, Option<TypeRef>>,
@@ -100,9 +94,7 @@ pub struct Builder<'a> {
     enum_member_decls: HashMap<SymbolId, (EnumMemberDecl, SymbolId)>,
     constructor_decls: HashMap<NodeId, (ConstructorDecl, ScopeId)>,
     pending_aliases: Vec<(String, TypeRef)>,
-    /// Bodies to check in phase C: (body NodeId, scope).
     bodies: Vec<(NodeId, ScopeId)>,
-    /// Parsed ASTs per file (for call-graph analysis).
     file_asts: Vec<crate::syntax::ast::AstFile>,
 }
 
@@ -148,7 +140,6 @@ impl<'a> Builder<'a> {
 
     pub fn finish(mut self, project: &Project) -> SemanticProgram {
         self.resolve_decl_types();
-        // Rule scopes: the checker looks them up via node_scopes.
         SemanticProgram {
             project: project.clone(),
             tables: self.tables,
@@ -176,10 +167,6 @@ impl<'a> Builder<'a> {
                 .collect(),
         }
     }
-
-    // ------------------------------------------------------------------
-    // Phase A: collect declarations
-    // ------------------------------------------------------------------
 
     pub fn collect(&mut self, project: &Project) {
         for &file in &project.files {
@@ -213,7 +200,6 @@ impl<'a> Builder<'a> {
                     .push((a.name.name.clone(), a.target.clone()));
             }
             ItemKind::Rule(r) => {
-                // Rule scope for rule-level `define` variables.
                 let rscope = self.tables.push_scope(scope, ScopeKind::Rule);
                 self.node_scopes.insert(item.id, rscope);
                 self.bodies.push((item.id, rscope));
@@ -241,7 +227,7 @@ impl<'a> Builder<'a> {
     ) {
         let ty = match &v.kind {
             VarDeclKind::Define => Type::Any,
-            VarDeclKind::Typed(_) => Type::Error, // resolved in phase B
+            VarDeclKind::Typed(_) => Type::Error,
         };
         let flags = SymbolFlags {
             extended: v.extended,
@@ -376,7 +362,6 @@ impl<'a> Builder<'a> {
         self.function_symbols.insert(f.name.id, id);
         self.function_decls.insert(f.name.id, (f.clone(), scope));
 
-        // Function scope: type params + params + body.
         let fscope = self.tables.push_scope(scope, ScopeKind::Function);
         self.node_scopes.insert(f.name.id, fscope);
         for tp in &f.type_params {
@@ -399,7 +384,6 @@ impl<'a> Builder<'a> {
             self.collect_param(p, fscope);
         }
 
-        // Body bookkeeping for phase C.
         match &f.body {
             FuncBody::Block(_) | FuncBody::Expr(_) => {
                 let body_node = f.name.id;
@@ -471,7 +455,6 @@ impl<'a> Builder<'a> {
         self.type_symbols.insert(t.name.id, id);
         self.type_decl_refs.insert(id, t.base.clone());
 
-        // Type scope with type params.
         let tscope = self.tables.push_scope(scope, ScopeKind::Class);
         self.node_scopes.insert(t.name.id, tscope);
         let mut type_param_ids = Vec::new();
@@ -581,14 +564,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Phase B: resolve declaration types
-    // ------------------------------------------------------------------
-
     fn resolve_decl_types(&mut self) {
         let root = self.tables.root_scope;
 
-        // Aliases (transparent).
         let aliases = std::mem::take(&mut self.pending_aliases);
         for (name, target) in aliases {
             let ty = self.type_of(&target, root);
@@ -602,7 +580,6 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Variable types.
         let vars: Vec<(NodeId, SymbolId, VarDeclKind)> = self
             .var_symbols
             .iter()
@@ -616,7 +593,6 @@ impl<'a> Builder<'a> {
             self.tables.symbols[sid as usize].ty = ty;
         }
 
-        // Function signatures + param types.
         let funcs: Vec<(NodeId, SymbolId, FunctionDecl, ScopeId)> = self
             .function_decls
             .iter()
@@ -657,7 +633,6 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Type declarations: bases + enum member payload types.
         let types: Vec<SymbolId> = self.type_symbols.values().copied().collect();
         for tid in types {
             let scope = self.node_scopes[&self.tables.symbol(tid).decl];
@@ -697,17 +672,13 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Value-type recursion (SM018).
         self.check_value_recursion();
-        // Inheritance cycles (SM029) and override legality (SM030).
         self.check_inheritance();
-        // Recursion legality (SM035/SM036).
         self.check_recursion_legality();
     }
 
     fn check_inheritance(&mut self) {
         let type_ids: Vec<SymbolId> = self.type_symbols.values().copied().collect();
-        // SM029: inheritance cycles via base chains.
         for tid in &type_ids {
             let mut seen = std::collections::HashSet::new();
             let mut cur = Some(*tid);
@@ -726,7 +697,6 @@ impl<'a> Builder<'a> {
                 cur = self.base_symbol_of(c);
             }
         }
-        // SM030: override must have a matching virtual ancestor.
         let members: Vec<(SymbolId, SymbolId)> = type_ids
             .iter()
             .flat_map(|tid| {
@@ -805,7 +775,6 @@ impl<'a> Builder<'a> {
     /// function (SM035) or any macro (SM036) is an error. Subroutines and
     /// `recursive`-flagged functions may recurse.
     fn check_recursion_legality(&mut self) {
-        // Callee names per function body (from the AST).
         let mut callees: HashMap<SymbolId, Vec<String>> = HashMap::new();
         let funcs: Vec<(SymbolId, NodeId)> = self
             .function_symbols
@@ -816,7 +785,6 @@ impl<'a> Builder<'a> {
             let calls = self.body_callee_names(nid);
             callees.insert(sid, calls);
         }
-        // Resolve names to symbol ids.
         let mut resolved: HashMap<SymbolId, Vec<SymbolId>> = HashMap::new();
         for (sid, calls) in &callees {
             let ids: Vec<SymbolId> = calls

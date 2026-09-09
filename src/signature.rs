@@ -1,4 +1,4 @@
-//! OSTW source bindings to the canonical Workshop catalog (#118).
+//! OSTW source bindings to the canonical Workshop catalog.
 //!
 //! This module owns ONLY genuinely OSTW-specific source binding/alias
 //! metadata: the OSTW source name -> canonical catalog identity mapping for

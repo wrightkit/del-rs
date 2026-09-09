@@ -1,5 +1,3 @@
-//! Syntax layer: lexer, token stream, AST, recoverable parser.
-
 pub mod ast;
 pub mod lexer;
 pub mod parser;

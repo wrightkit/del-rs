@@ -600,7 +600,6 @@ impl<'a> Lowerer<'a> {
                             .as_deref()
                             .is_some_and(|stmt| self.stmt_contains_parameter_call(stmt))
                     {
-                        // The caller rejects control-flow parameter calls below.
                     }
                 }
                 HirStmtKind::While { body, .. }

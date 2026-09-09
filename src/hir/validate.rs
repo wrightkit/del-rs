@@ -1,4 +1,4 @@
-//! HIR invariant validation (HI codes, architecture §15.4).
+//! Validate HIR invariants and report HI diagnostics.
 //!
 //! Deterministic and span-attributed; the oracle refuses to execute a
 //! program with HI errors.
@@ -13,7 +13,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         out.push(error(Phase::Hir, code, span, msg));
     };
 
-    // HI003: VarRefs reference existing vars.
     for (id, e) in hir.exprs.iter().enumerate() {
         match &e.kind {
             HirExprKind::VarRef { var } => {
@@ -38,7 +37,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         }
     }
 
-    // HI006: assignment targets are lvalues.
     for e in &hir.exprs {
         if let HirExprKind::Assign { target, .. } = &e.kind {
             match &hir.expr(*target).map(|t| &t.kind) {
@@ -55,7 +53,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         }
     }
 
-    // HI008: return value consistency.
     for f in &hir.funcs {
         if let Some(body) = &f.body {
             let mut saw_return = false;
@@ -76,7 +73,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         }
     }
 
-    // HI007: break/continue inside loops or switch.
     for f in &hir.funcs {
         if let Some(body) = &f.body {
             let mut depth = 0u32;
@@ -92,7 +88,6 @@ pub fn validate(hir: &HirProgram) -> Vec<Diagnostic> {
         });
     }
 
-    // HI010: delete operand class-typed (delete is a statement).
     for f in &hir.funcs {
         if let Some(body) = &f.body {
             check_block_delete_operands(body, hir, &mut |code, span, msg| {
