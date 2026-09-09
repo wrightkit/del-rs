@@ -54,6 +54,50 @@ fn lower_files(files: &[(&str, &str)]) -> (workshop_rs::wir::Program, Vec<deltin
 }
 
 #[test]
+fn localized_string_uses_canonical_workshop_identity() {
+    let (program, diagnostics) = lower(
+        r#"
+rule: "localized" Event.OngoingGlobal {
+    BigMessage(AllPlayers(), @"Hello");
+}
+"#,
+    );
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+
+    let catalog = workshop_rs::catalog::Catalog::builtin().unwrap();
+    let locale = workshop_rs::catalog::Locale::new("en-US");
+    workshop_rs::validate::validate_canonical_ids(&program, &catalog)
+        .expect("canonical Workshop validation");
+    let emitted = workshop_rs::emitter::emit(&program, &catalog, &locale).unwrap();
+    assert!(emitted.contains("String(\"Hello\")"), "{emitted}");
+    assert!(!emitted.contains("Custom String(\"Hello\")"), "{emitted}");
+}
+
+#[test]
+fn unknown_localized_string_fails_closed_at_the_catalog_boundary() {
+    let (program, diagnostics) = lower(
+        r#"
+rule: "localized" Event.OngoingGlobal {
+    BigMessage(AllPlayers(), @"Not A Workshop Preset");
+}
+"#,
+    );
+    assert!(program.rules.is_empty());
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "HI018"
+                && diagnostic
+                    .message
+                    .contains("unknown canonical Workshop localized string")
+        }),
+        "{diagnostics:?}"
+    );
+}
+
+#[test]
 fn hir_is_backend_neutral_and_hir_only_external_lowering_fails_closed() {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1000);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

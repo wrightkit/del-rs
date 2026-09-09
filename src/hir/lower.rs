@@ -693,7 +693,10 @@ impl Lowerer<'_> {
                 let v: f64 = n.text.parse().unwrap_or(0.0);
                 HirExprKind::Literal(LiteralValue::Number(v))
             }
-            ExprKind::Str(s) => HirExprKind::Literal(LiteralValue::Str(s.raw.clone())),
+            ExprKind::Str(s) => HirExprKind::Literal(match s.quote {
+                QuoteKind::Localized => LiteralValue::LocalizedStr(s.raw.clone()),
+                _ => LiteralValue::Str(s.raw.clone()),
+            }),
             ExprKind::StrInterp { parts, args } => HirExprKind::StrInterp {
                 parts: parts
                     .iter()

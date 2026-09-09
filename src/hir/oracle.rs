@@ -143,7 +143,9 @@ impl<'a> Oracle<'a> {
         match &e.kind {
             HirExprKind::Literal(l) => Ok(match l {
                 LiteralValue::Number(n) => OracleValue::Number(*n),
-                LiteralValue::Str(s) => OracleValue::String(s.clone()),
+                LiteralValue::Str(s) | LiteralValue::LocalizedStr(s) => {
+                    OracleValue::String(s.clone())
+                }
                 LiteralValue::Bool(b) => OracleValue::Bool(*b),
                 LiteralValue::Null => OracleValue::Null,
             }),

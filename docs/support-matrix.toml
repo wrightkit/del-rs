@@ -713,8 +713,8 @@ id = "workshop-lowering.strings"
 name = "workshop-lowering.strings"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
-notes = "Concrete HIR-to-WIR lowering is deltin-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
+evidence = ["tests/workshop_lowering.rs", "docs/inventory.md"]
+notes = "A bounded #32 slice resolves localized strings through the released workshop-rs catalog and fails closed when no canonical preset identity exists. Plain and interpolated string lowering remains within the broader compiler surface."
 
 [[features]]
 id = "workshop-lowering.lobby-settings"
