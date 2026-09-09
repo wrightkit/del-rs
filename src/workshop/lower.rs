@@ -2455,6 +2455,33 @@ impl<'a> Lowerer<'a> {
                     text: format_number(value),
                 },
                 LiteralValue::Str(value) => wir::Value::String(unquote(&value)),
+                LiteralValue::LocalizedStr(value) => {
+                    let spelling = unquote(value.strip_prefix('@').unwrap_or(&value));
+                    let catalog = Catalog::builtin().map_err(|error| {
+                        self.unsupported(
+                            expr.span,
+                            format!("canonical Workshop catalog could not be loaded: {error}"),
+                        );
+                    })?;
+                    let locale = workshop_rs::catalog::Locale::new("en-US");
+                    let localized = catalog
+                        .resolve_localized_string(&locale, &spelling)
+                        .or_else(|| {
+                            catalog.localized_strings().find(|entry| {
+                                entry
+                                    .spelling(&locale)
+                                    .is_some_and(|alias| alias.eq_ignore_ascii_case(&spelling))
+                            })
+                        });
+                    let Some(localized) = localized else {
+                        self.unsupported(
+                            expr.span,
+                            format!("unknown canonical Workshop localized string {spelling:?}"),
+                        );
+                        return Err(());
+                    };
+                    wir::Value::LocalizedString(localized.id.clone())
+                }
                 LiteralValue::Bool(value) => wir::Value::Bool(value),
                 LiteralValue::Null => wir::Value::Null,
             },

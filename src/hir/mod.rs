@@ -427,6 +427,7 @@ pub struct HirEnumMemberRef {
 pub enum LiteralValue {
     Number(f64),
     Str(String),
+    LocalizedStr(String),
     Bool(bool),
     Null,
 }
