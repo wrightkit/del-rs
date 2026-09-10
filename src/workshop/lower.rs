@@ -48,8 +48,11 @@ pub fn lower_project_to_wir(
     }
     diagnostics.extend(hir_diagnostics);
     let context = WorkshopLoweringContext::from_semantic(semantic);
-    let (program, mut lowering) =
+    let (mut program, mut lowering) =
         lower_to_wir_with_context(&hir, &semantic.project.sources, &context);
+    if !lowering.iter().any(Diagnostic::is_error) {
+        super::settings::append_imports(&mut program, &semantic.project, &mut lowering);
+    }
     diagnostics.append(&mut lowering);
     (program, diagnostics)
 }

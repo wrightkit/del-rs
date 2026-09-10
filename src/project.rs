@@ -41,7 +41,24 @@ pub struct Project {
     /// Deterministic compilation order (DFS post-order over imports).
     pub files: Vec<FileId>,
     pub imports: Vec<ImportEdge>,
+    /// Settings carriers imported by DEL/OSTW source. Their syntax stays local
+    /// to the project loader; canonical interpretation happens at the
+    /// Workshop lowering boundary.
+    pub settings_imports: Vec<SettingsImport>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsImportKind {
+    Json,
+    Lobby,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsImport {
+    pub kind: SettingsImportKind,
+    pub file: FileId,
+    pub span: Span,
 }
 
 /// Load a project from disk. Total: read/parse errors become diagnostics.
@@ -68,6 +85,7 @@ pub fn load_project_with_overlay(
         overlay,
         diagnostics,
         imports: Vec::new(),
+        settings_imports: Vec::new(),
         files: Vec::new(),
         in_progress: Vec::new(),
         by_canonical: HashMap::new(),
@@ -94,6 +112,7 @@ pub fn load_project_with_overlay(
         entry: entry_id,
         files: loader.files,
         imports: loader.imports,
+        settings_imports: loader.settings_imports,
         diagnostics: loader.diagnostics,
     }
 }
@@ -192,6 +211,7 @@ struct Loader<'a> {
     overlay: &'a BTreeMap<String, String>,
     diagnostics: Vec<Diagnostic>,
     imports: Vec<ImportEdge>,
+    settings_imports: Vec<SettingsImport>,
     files: Vec<FileId>,
     in_progress: Vec<(PathBuf, FileId)>,
     by_canonical: HashMap<PathBuf, FileId>,
@@ -291,17 +311,23 @@ impl Loader<'_> {
                 }
                 _ => {
                     let import_abs = abs.parent().unwrap_or(&self.root).join(&imp.path);
-                    let canonical = import_abs.canonicalize().unwrap_or(import_abs);
-                    let imported = self.sources.by_name(&canonical).unwrap_or_else(|| {
-                        let name = canonical
-                            .strip_prefix(&self.root)
-                            .unwrap_or(&canonical)
-                            .to_path_buf();
-                        self.sources.add_file(name, String::new())
-                    });
+                    let imported = self.load_settings_file(&import_abs, Some(imp.span));
                     self.imports.push(ImportEdge {
                         importer: id,
                         imported,
+                        span: imp.span,
+                    });
+                    self.settings_imports.push(SettingsImport {
+                        kind: match imp.kind {
+                            crate::syntax::ast::ImportKind::JsonSettings => {
+                                SettingsImportKind::Json
+                            }
+                            crate::syntax::ast::ImportKind::LobbySettings => {
+                                SettingsImportKind::Lobby
+                            }
+                            _ => unreachable!("settings import branch only handles settings kinds"),
+                        },
+                        file: imported,
                         span: imp.span,
                     });
                 }
@@ -309,6 +335,35 @@ impl Loader<'_> {
         }
 
         self.in_progress.pop();
+        id
+    }
+
+    fn load_settings_file(&mut self, abs: &Path, importer_span: Option<Span>) -> FileId {
+        let canonical = abs.canonicalize().unwrap_or_else(|_| abs.to_path_buf());
+        if let Some(id) = self.by_canonical.get(&canonical) {
+            return *id;
+        }
+
+        let name = abs.strip_prefix(&self.root).unwrap_or(abs).to_path_buf();
+        let overlay_key = name.to_string_lossy().replace('\\', "/");
+        let text = match self.overlay.get(&overlay_key) {
+            Some(text) => text.clone(),
+            None => match std::fs::read_to_string(abs) {
+                Ok(text) => text,
+                Err(read_error) => {
+                    let span = importer_span.unwrap_or_else(|| Span::new(FileId(0), 0, 0));
+                    self.diagnostics.push(error(
+                        Phase::Project,
+                        "PJ002",
+                        span,
+                        format!("missing import target: {} ({read_error})", abs.display()),
+                    ));
+                    String::new()
+                }
+            },
+        };
+        let id = self.sources.add_file(name, text);
+        self.by_canonical.insert(canonical, id);
         id
     }
 }

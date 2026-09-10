@@ -1,6 +1,6 @@
 //! Project loading tests for the independently supported project slice.
 
-use deltin_rs::project::{load_project, ProjectConfig, ProjectOptions};
+use deltin_rs::project::{load_project, ProjectConfig, ProjectOptions, SettingsImportKind};
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> PathBuf {
@@ -135,4 +135,23 @@ fn unreadable_ds_toml_uses_a_registered_config_source() {
         project.sources.get(diagnostic.primary.file).name,
         PathBuf::from("ds.toml")
     );
+}
+
+#[test]
+fn settings_imports_register_their_source_carriers() {
+    let root = fixture("pathfinding");
+    let project = load_project(ProjectOptions {
+        root,
+        entry: Some(PathBuf::from("Pathfinding.del")),
+        config: None,
+    });
+
+    assert_eq!(project.settings_imports.len(), 1);
+    let import = project.settings_imports[0];
+    assert_eq!(import.kind, SettingsImportKind::Json);
+    assert_eq!(
+        project.sources.get(import.file).name,
+        PathBuf::from("customGameSettings.json")
+    );
+    assert!(project.sources.text(import.file).contains("Eichenwalde"));
 }

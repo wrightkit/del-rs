@@ -721,8 +721,8 @@ id = "workshop-lowering.lobby-settings"
 name = "workshop-lowering.lobby-settings"
 category = "workshop-lowering"
 state = "lowering-dependent"
-evidence = ["docs/inventory.md"]
-notes = "Concrete HIR-to-WIR lowering is deltin-rs #30 work; canonical WIR, catalog, and emission contracts remain owned by workshop-rs. Inventory evidence for the lowering-dependent contract; this is not an end-to-end support claim."
+evidence = ["docs/inventory.md", "tests/workshop_lowering.rs"]
+notes = "JSON and .lobby project carriers are parsed locally, then converted through the released canonical workshop-rs settings parser and emitted through its WIR/settings contract. Unsupported carrier shapes fail at the importing DEL source span."
 
 [[features]]
 id = "workshop-lowering.workshop-comments"
@@ -940,8 +940,9 @@ evidence = ["tests/corpus/projects/modules/PathfindEditor.del", "docs/inventory.
 id = "project.lobby-settings-import"
 name = "project.lobby-settings-import"
 category = "project"
-state = "planned"
-evidence = ["tests/corpus/projects/pathfinding/customGameSettings.json", "docs/inventory.md"]
+state = "lowering-dependent"
+evidence = ["tests/corpus/projects/pathfinding/customGameSettings.json", "tests/workshop_lowering.rs", "docs/inventory.md"]
+notes = "The loader retains JSON/.lobby carrier sources and the Workshop lowering boundary routes them through canonical workshop-rs settings parsing, validation, and emission."
 
 [[features]]
 id = "project.pathmap-loading"
