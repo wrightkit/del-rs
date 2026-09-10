@@ -198,6 +198,7 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ),
     ("WK001", "canonical Workshop validation failed"),
     ("WK002", "canonical Workshop emission failed"),
+    ("WK003", "canonical Workshop settings import failed"),
     ("OR001", "stale reference: use of a deleted object"),
     ("OR002", "execution steps limit exceeded"),
     ("OR003", "recursion depth limit exceeded"),

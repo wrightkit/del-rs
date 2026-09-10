@@ -77,6 +77,76 @@ rule: "localized" Event.OngoingGlobal {
 }
 
 #[test]
+fn project_settings_carriers_lower_through_canonical_workshop_settings() {
+    let (program, diagnostics) = lower_files(&[
+        (
+            "main.del",
+            "import \"settings.json\";\nimport \"settings.lobby\";\n",
+        ),
+        (
+            "settings.json",
+            r#"{
+  "Modes": {
+    "Skirmish": {
+      "Enabled": true,
+      "Enabled Maps": ["Eichenwalde"]
+    }
+  }
+}"#,
+        ),
+        (
+            "settings.lobby",
+            r#"settings {
+    workshop {
+    }
+}"#,
+        ),
+    ]);
+
+    assert!(
+        diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
+        "{diagnostics:?}"
+    );
+    workshop_rs::validate::validate_canonical_ids(
+        &program,
+        &workshop_rs::catalog::Catalog::builtin().unwrap(),
+    )
+    .expect("canonical settings identities validate");
+    let emitted = workshop_rs::emitter::emit(
+        &program,
+        &workshop_rs::catalog::Catalog::builtin().unwrap(),
+        &workshop_rs::catalog::Locale::new("en-US"),
+    )
+    .expect("canonical settings emission");
+    assert!(emitted.contains("settings {"), "{emitted}");
+    assert!(emitted.contains("Skirmish {"), "{emitted}");
+    assert!(emitted.contains("enabled maps {"), "{emitted}");
+    assert!(program
+        .settings
+        .as_ref()
+        .expect("settings imports produce a carrier")
+        .children
+        .iter()
+        .any(|node| node.name() == "workshop"));
+}
+
+#[test]
+fn invalid_settings_carrier_fails_at_the_import_boundary() {
+    let (program, diagnostics) = lower_files(&[
+        ("main.del", "import \"settings.json\";\n"),
+        ("settings.json", r#"{"Modes": "not a settings group"}"#),
+    ]);
+
+    assert!(program.settings.is_none());
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "WK003")
+        .expect("invalid settings carrier must be diagnosed");
+    assert_eq!(diagnostic.phase, deltin_rs::Phase::Workshop);
+    assert_eq!(diagnostic.primary.file, deltin_rs::FileId(0));
+}
+
+#[test]
 fn unknown_localized_string_fails_closed_at_the_catalog_boundary() {
     let (program, diagnostics) = lower(
         r#"
