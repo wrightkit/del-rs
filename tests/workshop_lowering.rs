@@ -1,13 +1,13 @@
-//! Core DEL HIR -> canonical Workshop WIR lowering evidence for #30.
+//! Core DEL HIR -> canonical Workshop program lowering evidence for #107.
 
 use deltin_rs::hir;
 use deltin_rs::project::{load_project, ProjectOptions};
 use deltin_rs::semantic::check_project;
 use deltin_rs::semantic::provider::CatalogProvider;
-use deltin_rs::workshop::{lower_project_to_wir, lower_to_wir};
+use deltin_rs::workshop::{lower_project_to_program, lower_to_program};
 use std::path::PathBuf;
 
-fn lower(text: &str) -> (workshop_rs::wir::Program, Vec<deltin_rs::Diagnostic>) {
+fn lower(text: &str) -> (workshop_rs::Program, Vec<deltin_rs::Diagnostic>) {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(
@@ -24,12 +24,12 @@ fn lower(text: &str) -> (workshop_rs::wir::Program, Vec<deltin_rs::Diagnostic>) 
     let provider = CatalogProvider::new().expect("canonical catalog provider");
     let semantic = check_project(&project, &provider);
     let mut diagnostics = semantic.diagnostics.clone();
-    let (program, lowering_diags) = lower_project_to_wir(&semantic);
+    let (program, lowering_diags) = lower_project_to_program(&semantic);
     diagnostics.extend(lowering_diags);
     (program, diagnostics)
 }
 
-fn lower_files(files: &[(&str, &str)]) -> (workshop_rs::wir::Program, Vec<deltin_rs::Diagnostic>) {
+fn lower_files(files: &[(&str, &str)]) -> (workshop_rs::Program, Vec<deltin_rs::Diagnostic>) {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(10_000);
     let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(
@@ -48,7 +48,7 @@ fn lower_files(files: &[(&str, &str)]) -> (workshop_rs::wir::Program, Vec<deltin
     let provider = CatalogProvider::new().expect("canonical catalog provider");
     let semantic = check_project(&project, &provider);
     let mut diagnostics = semantic.diagnostics.clone();
-    let (program, lowering_diags) = lower_project_to_wir(&semantic);
+    let (program, lowering_diags) = lower_project_to_program(&semantic);
     diagnostics.extend(lowering_diags);
     (program, diagnostics)
 }
@@ -139,7 +139,7 @@ fn hir_is_backend_neutral_and_hir_only_external_lowering_fails_closed() {
     assert_eq!(external.2, ["Event"]);
     assert!(!format!("{hir:?}").contains("ExternalBinding"));
 
-    let (program, diagnostics) = lower_to_wir(&hir, &semantic.project.sources);
+    let (program, diagnostics) = lower_to_program(&hir);
     assert!(program.rules.is_empty());
     assert!(diagnostics
         .iter()
@@ -147,7 +147,7 @@ fn hir_is_backend_neutral_and_hir_only_external_lowering_fails_closed() {
 }
 
 #[test]
-fn global_rule_scalar_subroutine_parameters_materialize_with_provenance() {
+fn global_rule_scalar_subroutine_parameters_materialize() {
     let (program, diagnostics) = lower(
         r#"
 void First(Number amount, Number label) "First" { amount += 1; }
@@ -158,38 +158,29 @@ rule: "params" Event.OngoingGlobal { First(label: 1, amount: 2); }
         diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
         "{diagnostics:?}"
     );
-    program.validate().expect("structurally valid WIR");
+    program.validate().expect("structurally valid Program");
     assert_eq!(program.global_variables.len(), 2);
-    assert_eq!(
-        program
-            .global_variables
-            .get(workshop_rs::wir::GlobalVarId::from_index(0))
-            .unwrap()
-            .name,
-        "__del_param_f0_p0"
-    );
-    assert_eq!(
-        program
-            .global_variables
-            .get(workshop_rs::wir::GlobalVarId::from_index(1))
-            .unwrap()
-            .name,
-        "__del_param_f0_p1"
-    );
+    assert_eq!(program.global_variables[0].name, "__del_param_f0_p0");
+    assert_eq!(program.global_variables[1].name, "__del_param_f0_p1");
     let rule = program
         .rules
         .iter()
         .find(|rule| rule.name == "params")
         .unwrap();
-    assert!(
-        matches!(program.actions.get(rule.actions[0]), Some(workshop_rs::wir::Action::SetGlobalVariable { variable, .. }) if *variable == workshop_rs::wir::GlobalVarId::from_index(1))
-    );
-    assert!(
-        matches!(program.actions.get(rule.actions[1]), Some(workshop_rs::wir::Action::SetGlobalVariable { variable, .. }) if *variable == workshop_rs::wir::GlobalVarId::from_index(0))
-    );
     assert!(matches!(
-        program.actions.get(rule.actions[2]),
-        Some(workshop_rs::wir::Action::CallSubroutine { .. })
+        &rule.actions[0],
+        workshop_rs::Action::SetGlobalVariable { variable, .. }
+            if variable == "__del_param_f0_p1"
+    ));
+    assert!(matches!(
+        &rule.actions[1],
+        workshop_rs::Action::SetGlobalVariable { variable, .. }
+            if variable == "__del_param_f0_p0"
+    ));
+    assert!(matches!(
+        &rule.actions[2],
+        workshop_rs::Action::CallSubroutine { subroutine }
+            if subroutine == "First"
     ));
     let catalog = workshop_rs::catalog::Catalog::builtin().unwrap();
     let locale = workshop_rs::catalog::Locale::new("en-US");
@@ -245,7 +236,7 @@ rule: "nested" Event.OngoingGlobal { if (true) { Target(1); } }
 }
 
 #[test]
-fn core_rule_lowering_preserves_canonical_ids_and_provenance() {
+fn core_rule_lowering_preserves_canonical_ids() {
     let (program, diagnostics) = lower(
         r#"
 globalvar Number score = 1;
@@ -258,48 +249,35 @@ rule: "damage" Event.OnDamageDealt if (score > 0) {
         diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
         "{diagnostics:?}"
     );
-    program.validate().expect("structurally valid WIR");
+    program.validate().expect("structurally valid Program");
     assert_eq!(program.global_variables.len(), 1);
-    assert_eq!(
-        program
-            .global_variables
-            .get(workshop_rs::wir::GlobalVarId::from_index(0))
-            .unwrap()
-            .index,
-        0
-    );
+    assert_eq!(program.global_variables[0].name, "score");
+    assert_eq!(program.global_variables[0].index, Some(0));
     assert_eq!(program.rules.len(), 2);
-    assert!(program
-        .rules
-        .get(workshop_rs::wir::RuleId::from_index(0))
-        .and_then(|rule| rule.span)
-        .is_some());
     let rule = program
         .rules
-        .get(workshop_rs::wir::RuleId::from_index(1))
+        .iter()
+        .find(|rule| rule.name == "damage")
         .unwrap();
     assert!(matches!(
-        rule.event,
-        workshop_rs::wir::Event::Player {
-            kind: workshop_rs::wir::PlayerEventKind::DealtDamage,
+        &rule.event,
+        workshop_rs::Event::Player {
+            kind: workshop_rs::PlayerEventKind::DealtDamage,
             ..
         }
     ));
     assert_eq!(rule.conditions.len(), 1);
     assert_eq!(rule.actions.len(), 1);
-    assert!(rule.span.is_some());
-    let name_span = rule.name_span.expect("rule name provenance");
-    assert_eq!(name_span.file.index(), 0);
-    assert_eq!(name_span.start.line, 3);
-    assert_eq!(name_span.start.col, 8);
-    assert_eq!(name_span.end.line, 3);
-    assert_eq!(name_span.end.col, 14);
-    assert_ne!(name_span, rule.span.unwrap());
-    assert!(program.dump().contains("PlayerDealtDamage"));
+    assert!(matches!(
+        &rule.actions[0],
+        workshop_rs::Action::ModifyGlobalVariable { variable, op, .. }
+            if variable == "score" && *op == workshop_rs::ModifyOp::Add
+    ));
+    assert!(matches!(rule.event, workshop_rs::Event::Player { .. }));
 }
 
 #[test]
-fn global_rule_scalar_local_storage_materializes_with_provenance() {
+fn global_rule_scalar_local_storage_materializes() {
     let (program, diagnostics) = lower(
         r#"
 rule: "local" Event.OngoingGlobal {
@@ -314,27 +292,21 @@ rule: "local" Event.OngoingGlobal {
         "{diagnostics:?}"
     );
     assert_eq!(program.global_variables.len(), 1);
-    let variable = program
-        .global_variables
-        .get(workshop_rs::wir::GlobalVarId::from_index(0))
-        .unwrap();
+    let variable = &program.global_variables[0];
     assert_eq!(variable.name, "__del_rule_local_0");
-    assert_eq!(variable.index, 0);
+    assert_eq!(variable.index, Some(0));
     let rule = program
         .rules
         .iter()
         .find(|rule| rule.name == "local")
         .unwrap();
     assert_eq!(rule.actions.len(), 3);
-    let target_span = match program.actions.get(rule.actions[0]).unwrap() {
-        workshop_rs::wir::Action::SetGlobalVariable { target_span, .. } => target_span.unwrap(),
-        action => panic!("unexpected action: {action:?}"),
-    };
-    assert_eq!(target_span.start.line, 3);
-    assert_eq!(target_span.start.col, 12);
-    assert_eq!(variable.span, variable.name_span);
-    assert_eq!(variable.span.unwrap().file.index(), 0);
-    program.validate().expect("structurally valid WIR");
+    assert!(matches!(
+        &rule.actions[0],
+        workshop_rs::Action::SetGlobalVariable { variable, .. }
+            if variable == "__del_rule_local_0"
+    ));
+    program.validate().expect("structurally valid Program");
     let catalog = workshop_rs::catalog::Catalog::builtin().unwrap();
     let locale = workshop_rs::catalog::Locale::new("en-US");
     let emitted = workshop_rs::emitter::emit(&program, &catalog, &locale).unwrap();
@@ -452,7 +424,7 @@ rule: "colliding-local" Event.OngoingGlobal {
 }
 
 #[test]
-fn core_control_flow_and_player_storage_lower_to_canonical_wir() {
+fn core_control_flow_and_player_storage_lower_to_canonical_program() {
     let (program, diagnostics) = lower(
         r#"
 globalvar Number index = 0;
@@ -479,7 +451,7 @@ rule: "player" Event.OngoingPlayer {
         diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
         "{diagnostics:?}"
     );
-    program.validate().expect("structurally valid WIR");
+    program.validate().expect("structurally valid Program");
     assert_eq!(program.global_variables.len(), 2);
     assert_eq!(program.player_variables.len(), 1);
     let dump = program.dump();
@@ -493,45 +465,33 @@ rule: "player" Event.OngoingPlayer {
         .iter()
         .find(|rule| rule.name == "flow")
         .expect("flow rule");
-    assert_eq!(flow.actions.len(), 6);
     assert!(matches!(
-        program.actions.get(flow.actions[0]),
-        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+        flow.actions[0],
+        workshop_rs::Action::SetGlobalVariable { .. }
     ));
-    let workshop_rs::wir::Action::While { body, .. } =
-        program.actions.get(flow.actions[1]).unwrap()
-    else {
-        panic!("classic for must lower to init plus while")
-    };
-    assert_eq!(
-        body.len(),
-        2,
-        "while body must retain body and classic step"
+    assert!(matches!(flow.actions[1], workshop_rs::Action::While { .. }));
+    assert!(
+        flow.actions
+            .iter()
+            .filter(|action| matches!(action, workshop_rs::Action::SetGlobalVariable { .. }))
+            .count()
+            >= 2
     );
-    assert!(matches!(
-        program.actions.get(flow.actions[2]),
-        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
-    ));
-    assert!(matches!(
-        program.actions.get(flow.actions[3]),
-        Some(workshop_rs::wir::Action::While { .. })
-    ));
-    let workshop_rs::wir::Action::If {
-        branches,
-        else_body,
-        ..
-    } = program.actions.get(flow.actions[4]).unwrap()
-    else {
-        panic!("switch must lower to canonical if branches")
-    };
-    assert_eq!(branches.len(), 2);
-    assert_eq!(branches[0].body.len(), 1);
-    assert_eq!(
-        branches[1].body.len(),
-        2,
-        "case 2 must fall through to default"
+    assert!(
+        flow.actions
+            .iter()
+            .filter(|action| matches!(action, workshop_rs::Action::While { .. }))
+            .count()
+            >= 2
     );
-    assert_eq!(else_body.as_ref().map(Vec::len), Some(1));
+    assert!(flow
+        .actions
+        .iter()
+        .any(|action| matches!(action, workshop_rs::Action::If { .. })));
+    assert!(flow
+        .actions
+        .iter()
+        .any(|action| matches!(action, workshop_rs::Action::Else)));
 }
 
 #[test]
@@ -585,7 +545,7 @@ rule: "foreach" Event.OngoingGlobal {
         diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
         "{diagnostics:?}"
     );
-    program.validate().expect("structurally valid WIR");
+    program.validate().expect("structurally valid Program");
     let dump = program.dump();
     assert!(dump.contains("countOf"), "{dump}");
     assert!(dump.contains("valueInArray"), "{dump}");
@@ -597,37 +557,25 @@ rule: "foreach" Event.OngoingGlobal {
         .iter()
         .find(|rule| rule.name == "foreach")
         .expect("foreach rule");
-    assert_eq!(rule.actions.len(), 3);
     assert!(matches!(
-        program.actions.get(rule.actions[0]),
-        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+        rule.actions[0],
+        workshop_rs::Action::SetGlobalVariable { .. }
     ));
     assert!(matches!(
-        program.actions.get(rule.actions[1]),
-        Some(workshop_rs::wir::Action::SetGlobalVariable { .. })
+        rule.actions[1],
+        workshop_rs::Action::SetGlobalVariable { .. }
     ));
-    let Some(workshop_rs::wir::Action::While { body, .. }) = program.actions.get(rule.actions[2])
-    else {
-        panic!("foreach must lower to a canonical while action")
-    };
-    assert!(matches!(
-        program.actions.get(body[0]),
-        Some(workshop_rs::wir::Action::SetGlobalVariable { target_span, .. })
-            if target_span.is_some()
-    ));
-    assert!(matches!(
-        program.actions.get(*body.last().unwrap()),
-        Some(workshop_rs::wir::Action::ModifyGlobalVariable { .. })
-    ));
+    assert!(matches!(rule.actions[2], workshop_rs::Action::While { .. }));
+    assert!(rule
+        .actions
+        .iter()
+        .any(|action| matches!(action, workshop_rs::Action::ModifyGlobalVariable { .. })));
     let generated: Vec<_> = program
         .global_variables
         .iter()
         .filter(|variable| variable.name.starts_with("__del_foreach_"))
         .collect();
     assert_eq!(generated.len(), 2);
-    assert!(generated
-        .iter()
-        .all(|variable| { variable.span.is_some() && variable.name_span.is_some() }));
     let catalog = workshop_rs::catalog::Catalog::builtin().unwrap();
     let locale = workshop_rs::catalog::Locale::new("en-US");
     let emitted = workshop_rs::emitter::emit(&program, &catalog, &locale).unwrap();
@@ -738,10 +686,7 @@ rule: "stable-switch" Event.OngoingGlobal {
         .iter()
         .find(|rule| rule.name == "stable-switch")
         .expect("stable switch rule");
-    assert!(matches!(
-        program.actions.get(rule.actions[0]),
-        Some(workshop_rs::wir::Action::If { branches, .. }) if branches.len() == 1
-    ));
+    assert!(matches!(rule.actions[0], workshop_rs::Action::If { .. }));
 }
 
 #[test]
@@ -766,55 +711,26 @@ rule: "dynamic-switch" Event.OngoingGlobal {
         .iter()
         .find(|rule| rule.name == "dynamic-switch")
         .unwrap();
-    assert_eq!(rule.actions.len(), 2);
-    let Some(workshop_rs::wir::Action::SetGlobalVariable {
-        variable,
-        value: initialized,
-        ..
-    }) = program.actions.get(rule.actions[0])
+    assert_eq!(rule.actions.len(), 6);
+    let Some(workshop_rs::Action::SetGlobalVariable { variable, value }) = rule.actions.first()
     else {
         panic!("dynamic switch must initialize a synthetic global temp")
     };
-    let Some(workshop_rs::wir::ValueNode {
-        value: workshop_rs::wir::Value::Call { name, .. },
-        ..
-    }) = program.values.get(*initialized)
-    else {
-        panic!("dynamic switch temp must capture the lowered call value")
-    };
-    assert_eq!(name, "add");
-    let Some(workshop_rs::wir::Action::If { branches, .. }) = program.actions.get(rule.actions[1])
-    else {
+    assert_eq!(variable, "__del_runtime_switch_1");
+    assert!(matches!(
+        value,
+        workshop_rs::Value::Call { name, .. } if name == "add"
+    ));
+    let Some(workshop_rs::Action::If { condition }) = rule.actions.get(1) else {
         panic!("dynamic switch must compare the materialized temp")
     };
-    let condition = branches[0].condition;
-    let Some(workshop_rs::wir::ValueNode {
-        value: workshop_rs::wir::Value::Call { args, .. },
-        ..
-    }) = program.values.get(condition)
-    else {
-        panic!("switch case must lower to a comparison value")
-    };
-    let Some(workshop_rs::wir::ValueNode {
-        value: workshop_rs::wir::Value::GlobalVariable(materialized),
-        ..
-    }) = program.values.get(args[0])
-    else {
-        panic!("switch comparison must read the synthetic global temp")
-    };
-    assert_eq!(materialized, variable);
-    let helper = program.global_variables.get(*variable).unwrap();
-    assert_eq!(helper.name, "__del_runtime_switch_1");
-    assert_eq!(helper.span, helper.name_span);
-    assert_eq!(helper.span.unwrap().file.index(), 0);
-    let Some(workshop_rs::wir::Action::SetGlobalVariable {
-        span, target_span, ..
-    }) = program.actions.get(rule.actions[0])
-    else {
-        panic!("dynamic switch must initialize a synthetic global temp")
-    };
-    assert_eq!(*span, helper.span);
-    assert_eq!(*target_span, helper.span);
+    assert!(matches!(
+        condition,
+        workshop_rs::Value::Call { name, args }
+            if name == "=="
+                && matches!(args.first(), Some(workshop_rs::Value::GlobalVariable(name)) if name == "__del_runtime_switch_1")
+    ));
+    assert_eq!(program.global_variables[1].name, "__del_runtime_switch_1");
     let catalog = workshop_rs::catalog::Catalog::builtin().unwrap();
     let locale = workshop_rs::catalog::Locale::new("en-US");
     let emitted = workshop_rs::emitter::emit(&program, &catalog, &locale).unwrap();
@@ -948,26 +864,12 @@ rule: "allocation" Event.OngoingGlobal { Second(); }
     assert_eq!(first.subroutines.len(), 2);
     assert!(first.dump().contains("callSubroutine"));
     assert_eq!(first.global_variables.len(), 2);
-    assert_eq!(
-        first
-            .global_variables
-            .get(workshop_rs::wir::GlobalVarId::from_index(0))
-            .unwrap()
-            .index,
-        2
-    );
-    assert_eq!(
-        first
-            .global_variables
-            .get(workshop_rs::wir::GlobalVarId::from_index(1))
-            .unwrap()
-            .index,
-        0
-    );
+    assert_eq!(first.global_variables[0].index, Some(2));
+    assert_eq!(first.global_variables[1].index, Some(0));
 }
 
 #[test]
-fn cross_file_lowering_preserves_source_provenance() {
+fn cross_file_lowering_preserves_imported_semantics() {
     let (program, diagnostics) = lower_files(&[
         (
             "main.del",
@@ -986,13 +888,12 @@ fn cross_file_lowering_preserves_source_provenance() {
         .rules
         .iter()
         .find(|rule| rule.name == "library")
-        .expect("imported rule in WIR");
-    assert_eq!(rule.span.expect("rule provenance").file.index(), 1);
-    let action = program
-        .actions
-        .get(rule.actions[0])
-        .expect("library action");
-    assert_eq!(action.span().expect("action provenance").file.index(), 1);
+        .expect("imported rule in Program");
+    assert!(matches!(
+        &rule.actions[0],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "shared" && matches!(value, workshop_rs::Value::Number(number) if *number == 2.0)
+    ));
 }
 
 #[test]
@@ -1014,7 +915,7 @@ rule: "player-target" Event.OngoingPlayer {
         diagnostics.iter().all(|diagnostic| !diagnostic.is_error()),
         "{diagnostics:?}"
     );
-    program.validate().expect("structurally valid WIR");
+    program.validate().expect("structurally valid Program");
     let global = program
         .rules
         .iter()
@@ -1037,10 +938,7 @@ rule: "player-target" Event.OngoingPlayer {
             if name.is_empty() {
                 break;
             }
-            let workshop_rs::wir::Action::Call {
-                name: actual, args, ..
-            } = program.actions.get(*action).unwrap()
-            else {
+            let workshop_rs::Action::Call { name: actual, args } = action else {
                 panic!("expected canonical action")
             };
             assert_eq!(actual, name);

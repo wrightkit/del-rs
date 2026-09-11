@@ -1,4 +1,4 @@
-//! Lower the backend-neutral DEL HIR into canonical `workshop-rs` WIR.
+//! Lower the backend-neutral DEL HIR into canonical `workshop-rs` programs.
 //!
 //! This module owns the DEL-side lowering policy only. Workshop identities,
 //! event shapes, variable/action/value nodes, validation, and emission remain
@@ -13,75 +13,70 @@ use crate::hir::{
 use crate::project::Project;
 use crate::semantic::provider::{ExternalBinding, ExternalParam};
 use crate::semantic::types::Type;
-use crate::span::{FileId, SourceMap, Span};
+use crate::span::{FileId, Span};
 use crate::syntax::ast::{AssignOp, BinaryOp, UnaryOp};
 use std::collections::{HashMap, HashSet};
 use workshop_rs::catalog::{Catalog, Kind};
-use workshop_rs::source::{Position, SourceFile, Span as WorkshopSpan};
-use workshop_rs::wir;
+use workshop_rs::{Action, Event, ModifyOp, Program, Rule, Subroutine, Value, Variable};
 
-/// Lower a validated HIR program into canonical Workshop WIR.
+/// Lower a validated HIR program into the canonical Workshop program model.
 ///
-/// The source map is required because HIR spans use DEL byte offsets while
-/// WIR provenance uses 1-based source positions. The returned diagnostics are
-/// fail-closed: an unsupported construct never becomes a successful but
-/// semantically incomplete WIR node.
-pub fn lower_to_wir(hir: &HirProgram, sources: &SourceMap) -> (wir::Program, Vec<Diagnostic>) {
+/// The returned diagnostics are fail-closed: an unsupported construct never
+/// becomes a successful but semantically incomplete Workshop node.
+pub fn lower_to_program(hir: &HirProgram) -> (Program, Vec<Diagnostic>) {
     let hir_diagnostics = crate::hir::validate::validate(hir);
     if hir_diagnostics.iter().any(Diagnostic::is_error) {
-        return (wir::Program::default(), hir_diagnostics);
+        return (Program::default(), hir_diagnostics);
     }
-    Lowerer::new(hir, sources, None).run()
+    Lowerer::new(hir, None).run()
 }
 
 /// Convenience entry point for callers that still own the checked semantic
-/// program. HIR is lowered first, then lowered into WIR with the same project
-/// source registry.
-pub fn lower_project_to_wir(
+/// program. HIR is lowered first, then lowered into the canonical Workshop
+/// model.
+pub fn lower_project_to_program(
     semantic: &crate::semantic::SemanticProgram,
-) -> (wir::Program, Vec<Diagnostic>) {
+) -> (Program, Vec<Diagnostic>) {
     let (hir, mut diagnostics) = crate::hir::lower::lower(semantic);
     let hir_diagnostics = crate::hir::validate::validate(&hir);
     if hir_diagnostics.iter().any(Diagnostic::is_error) {
         diagnostics.extend(hir_diagnostics);
-        return (wir::Program::default(), diagnostics);
+        return (Program::default(), diagnostics);
     }
     diagnostics.extend(hir_diagnostics);
     let context = WorkshopLoweringContext::from_semantic(semantic);
-    let (program, mut lowering) =
-        lower_to_wir_with_context(&hir, &semantic.project.sources, &context);
+    let (program, mut lowering) = lower_to_program_with_context(&hir, &context);
     diagnostics.append(&mut lowering);
     (program, diagnostics)
 }
 
-fn lower_to_wir_with_context(
+fn lower_to_program_with_context(
     hir: &HirProgram,
-    sources: &SourceMap,
     context: &WorkshopLoweringContext,
-) -> (wir::Program, Vec<Diagnostic>) {
-    Lowerer::new(hir, sources, Some(context)).run()
+) -> (Program, Vec<Diagnostic>) {
+    Lowerer::new(hir, Some(context)).run()
 }
 
 /// Lower a checked project directly. This preserves the public project
-/// boundary without making the WIR backend depend on the semantic provider.
+/// boundary without making the canonical Workshop model depend on the
+/// semantic provider.
 pub fn lower_project(
     project: &Project,
     provider: &dyn crate::semantic::provider::WorkshopProvider,
-) -> (wir::Program, Vec<Diagnostic>) {
+) -> (Program, Vec<Diagnostic>) {
     let semantic = crate::semantic::check_project(project, provider);
-    lower_project_to_wir(&semantic)
+    lower_project_to_program(&semantic)
 }
 
 struct Lowerer<'a> {
     hir: &'a HirProgram,
-    sources: &'a SourceMap,
     context: Option<&'a WorkshopLoweringContext>,
-    out: wir::Program,
-    global_vars: HashMap<HirVarId, wir::GlobalVarId>,
-    rule_local_globals: HashMap<HirVarId, wir::GlobalVarId>,
-    parameter_slots: HashMap<HirVarId, wir::GlobalVarId>,
-    player_vars: HashMap<HirVarId, wir::PlayerVarId>,
-    subroutines: HashMap<HirFuncId, wir::SubroutineId>,
+    out: Program,
+    global_vars: HashMap<HirVarId, String>,
+    rule_local_globals: HashMap<HirVarId, String>,
+    parameter_slots: HashMap<HirVarId, String>,
+    player_vars: HashMap<HirVarId, String>,
+    subroutines: HashMap<HirFuncId, String>,
     diagnostics: Vec<Diagnostic>,
     used_global_indices: HashSet<u32>,
     used_player_indices: HashSet<u32>,
@@ -91,19 +86,10 @@ struct Lowerer<'a> {
 }
 
 impl<'a> Lowerer<'a> {
-    fn new(
-        hir: &'a HirProgram,
-        sources: &'a SourceMap,
-        context: Option<&'a WorkshopLoweringContext>,
-    ) -> Self {
-        let mut out = wir::Program::default();
-        for source in sources.files() {
-            out.files
-                .push(SourceFile::new(source.name.display().to_string()));
-        }
+    fn new(hir: &'a HirProgram, context: Option<&'a WorkshopLoweringContext>) -> Self {
+        let out = Program::default();
         Self {
             hir,
-            sources,
             context,
             out,
             global_vars: HashMap::new(),
@@ -120,7 +106,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn run(mut self) -> (wir::Program, Vec<Diagnostic>) {
+    fn run(mut self) -> (Program, Vec<Diagnostic>) {
         self.allocate_variables();
         self.allocate_subroutines();
         self.allocate_parameter_slots();
@@ -135,7 +121,7 @@ impl<'a> Lowerer<'a> {
         }
         self.validate_output();
         if self.diagnostics.iter().any(Diagnostic::is_error) {
-            return (wir::Program::default(), self.diagnostics);
+            return (Program::default(), self.diagnostics);
         }
         (self.out, self.diagnostics)
     }
@@ -162,13 +148,10 @@ impl<'a> Lowerer<'a> {
                     continue;
                 };
                 let index = self.allocate_index(None, false, param.span);
-                let wir_id = self.out.global_variables.push(wir::WorkshopVariable {
-                    name: format!("__del_param_f{fid}_p{param_index}"),
-                    index,
-                    span: self.ws_span(param.span),
-                    name_span: self.ws_span(param.span),
-                });
-                self.parameter_slots.insert(var, wir_id);
+                let name = format!("__del_param_f{fid}_p{param_index}");
+                self.out
+                    .global_variable(Variable::with_index(name.clone(), index));
+                self.parameter_slots.insert(var, name);
             }
         }
     }
@@ -179,23 +162,17 @@ impl<'a> Lowerer<'a> {
             match var.storage {
                 StorageIntent::Global => {
                     let index = self.allocate_index(var.explicit_id, false, var.span);
-                    let wir_id = self.out.global_variables.push(wir::WorkshopVariable {
-                        name: var.name.clone(),
-                        index,
-                        span: self.ws_span(var.span),
-                        name_span: self.ws_span(var.span),
-                    });
-                    self.global_vars.insert(id, wir_id);
+                    let name = var.name.clone();
+                    self.out
+                        .global_variable(Variable::with_index(name.clone(), index));
+                    self.global_vars.insert(id, name);
                 }
                 StorageIntent::Player => {
                     let index = self.allocate_index(var.explicit_id, true, var.span);
-                    let wir_id = self.out.player_variables.push(wir::WorkshopVariable {
-                        name: var.name.clone(),
-                        index,
-                        span: self.ws_span(var.span),
-                        name_span: self.ws_span(var.span),
-                    });
-                    self.player_vars.insert(id, wir_id);
+                    let name = var.name.clone();
+                    self.out
+                        .player_variable(Variable::with_index(name.clone(), index));
+                    self.player_vars.insert(id, name);
                 }
                 StorageIntent::Local => {}
                 StorageIntent::Member
@@ -204,7 +181,7 @@ impl<'a> Lowerer<'a> {
                 | StorageIntent::External => self.unsupported(
                     var.span,
                     format!(
-                        "variable '{}' has storage intent {:?} without a core Workshop WIR representation",
+                        "variable '{}' has storage intent {:?} without a canonical Workshop representation",
                         var.name, var.storage
                     ),
                 ),
@@ -215,21 +192,13 @@ impl<'a> Lowerer<'a> {
                 match reservation.storage {
                     StorageIntent::Global => {
                         let index = self.allocate_index(None, false, reservation.span);
-                        self.out.global_variables.push(wir::WorkshopVariable {
-                            name: name.clone(),
-                            index,
-                            span: self.ws_span(reservation.span),
-                            name_span: self.ws_span(reservation.span),
-                        });
+                        self.out
+                            .global_variable(Variable::with_index(name.clone(), index));
                     }
                     StorageIntent::Player => {
                         let index = self.allocate_index(None, true, reservation.span);
-                        self.out.player_variables.push(wir::WorkshopVariable {
-                            name: name.clone(),
-                            index,
-                            span: self.ws_span(reservation.span),
-                            name_span: self.ws_span(reservation.span),
-                        });
+                        self.out
+                            .player_variable(Variable::with_index(name.clone(), index));
                     }
                     _ => self.unsupported(reservation.span, "invalid variable reservation storage"),
                 }
@@ -265,21 +234,18 @@ impl<'a> Lowerer<'a> {
             if func.kind != crate::hir::FuncKind::Subroutine {
                 continue;
             }
-            let id = self.out.subroutines.push(wir::WorkshopSubroutine {
-                name: func.name.clone(),
-                index: self.out.subroutines.len() as u32,
-                span: self.ws_span(func.span),
-                name_span: self.ws_span(func.span),
-            });
-            self.subroutines.insert(index as HirFuncId, id);
+            let name = func.name.clone();
+            self.out.subroutine(Subroutine::with_index(
+                name.clone(),
+                self.out.subroutines.len() as u32,
+            ));
+            self.subroutines.insert(index as HirFuncId, name);
         }
     }
 
     fn lower_initializers(&mut self) {
         let mut global_actions = Vec::new();
         let mut player_actions = Vec::new();
-        let mut global_span = None;
-        let mut player_span = None;
         for stmt in &self.hir.top {
             let HirStmtKind::VarDecl { var, init } = stmt.kind else {
                 self.unsupported(
@@ -301,34 +267,17 @@ impl<'a> Lowerer<'a> {
             };
             match hir_var.storage {
                 StorageIntent::Global => {
-                    global_span.get_or_insert(stmt.span);
-                    if let Some(variable) = self.global_vars.get(&var).copied() {
-                        global_actions.push(self.out.actions.push(
-                            wir::Action::SetGlobalVariable {
-                                variable,
-                                value,
-                                span: self.ws_span(stmt.span),
-                                target_span: self.ws_span(hir_var.span),
-                            },
-                        ));
+                    if let Some(variable) = self.global_vars.get(&var).cloned() {
+                        global_actions.push(Action::SetGlobalVariable { variable, value });
                     }
                 }
                 StorageIntent::Player => {
-                    player_span.get_or_insert(stmt.span);
-                    if let Some(variable) = self.player_vars.get(&var).copied() {
-                        let player = self.out.values.push(wir::ValueNode::new(
-                            wir::Value::EventPlayer,
-                            self.ws_span(stmt.span),
-                        ));
-                        player_actions.push(self.out.actions.push(
-                            wir::Action::SetPlayerVariable {
-                                player,
-                                variable,
-                                value,
-                                span: self.ws_span(stmt.span),
-                                target_span: self.ws_span(hir_var.span),
-                            },
-                        ));
+                    if let Some(variable) = self.player_vars.get(&var).cloned() {
+                        player_actions.push(Action::SetPlayerVariable {
+                            player: Value::EventPlayer,
+                            variable,
+                            value,
+                        });
                     }
                 }
                 _ => self.unsupported(
@@ -338,23 +287,19 @@ impl<'a> Lowerer<'a> {
             }
         }
         if !global_actions.is_empty() {
-            self.out.rules.push(wir::Rule {
+            self.out.rule(Rule {
                 name: "Initialize Global Variables".to_string(),
-                span: global_span.and_then(|span| self.ws_span(span)),
-                name_span: None,
                 disabled: false,
-                event: wir::Event::Global,
+                event: Event::Global,
                 conditions: Vec::new(),
                 actions: global_actions,
             });
         }
         if !player_actions.is_empty() {
-            self.out.rules.push(wir::Rule {
+            self.out.rule(Rule {
                 name: "Initialize Player Variables".to_string(),
-                span: player_span.and_then(|span| self.ws_span(span)),
-                name_span: None,
                 disabled: false,
-                event: wir::Event::EachPlayer,
+                event: Event::EachPlayer,
                 conditions: Vec::new(),
                 actions: player_actions,
             });
@@ -372,24 +317,22 @@ impl<'a> Lowerer<'a> {
             }
             // DEL's `rule: "name" { ... }` form is the canonical global rule
             // form used by the source reconstructor.
-            None => wir::Event::Global,
+            None => Event::Global,
         };
         let previous_player_context = self.player_context;
         self.player_context = matches!(
             &event,
-            wir::Event::EachPlayer
-                | wir::Event::EachPlayerWithFilters { .. }
-                | wir::Event::Player { .. }
+            Event::EachPlayer | Event::EachPlayerWithFilters { .. } | Event::Player { .. }
         );
         self.rule_local_globals.clear();
         let parameter_calls_valid = self.validate_rule_parameter_calls(rule, &event);
-        if matches!(&event, wir::Event::Global) {
+        if matches!(&event, Event::Global) {
             self.prepare_global_rule_locals(rule);
         }
         let mut conditions = Vec::new();
         for condition in &rule.conditions {
             if let Ok(value) = self.lower_value(condition.expr) {
-                conditions.push(value);
+                conditions.push(value.into());
             }
         }
         let actions = if parameter_calls_valid {
@@ -402,10 +345,8 @@ impl<'a> Lowerer<'a> {
             self.rule_local_globals.clear();
             return;
         }
-        self.out.rules.push(wir::Rule {
+        self.out.rule(Rule {
             name: rule.name.clone().unwrap_or_default(),
-            span: self.ws_span(rule.span),
-            name_span: rule.name_span.and_then(|span| self.ws_span(span)),
             disabled: rule.disabled,
             event,
             conditions,
@@ -437,21 +378,19 @@ impl<'a> Lowerer<'a> {
             self.subroutine_context = previous_subroutine_context;
             return;
         }
-        let Some(subroutine) = self.subroutines.get(&fid).copied() else {
+        let Some(subroutine) = self.subroutines.get(&fid).cloned() else {
             self.player_context = previous_player_context;
             self.recursive_context = previous_recursive_context;
             self.subroutine_context = previous_subroutine_context;
             return;
         };
-        self.out.rules.push(wir::Rule {
+        self.out.rule(Rule {
             name: func
                 .subroutine_name
                 .clone()
                 .unwrap_or_else(|| func.name.clone()),
-            span: self.ws_span(func.span),
-            name_span: self.ws_span(func.span),
             disabled: false,
-            event: wir::Event::Subroutine(subroutine),
+            event: Event::Subroutine(subroutine),
             conditions: Vec::new(),
             actions,
         });
@@ -460,7 +399,7 @@ impl<'a> Lowerer<'a> {
         self.subroutine_context = previous_subroutine_context;
     }
 
-    fn lower_event(&mut self, id: HirExprId) -> Option<wir::Event> {
+    fn lower_event(&mut self, id: HirExprId) -> Option<Event> {
         let expr = self.hir.expr(id)?.clone();
         let HirExprKind::External { name, namespace } = expr.kind else {
             self.unsupported(
@@ -478,21 +417,27 @@ impl<'a> Lowerer<'a> {
             return None;
         };
         match info.canonical_id.as_str() {
-            "global" => Some(wir::Event::Global),
-            "eachPlayer" => Some(wir::Event::EachPlayer),
-            "playerDealtDamage" => Some(self.player_event(wir::PlayerEventKind::DealtDamage)),
-            "playerDealtFinalBlow" => Some(self.player_event(wir::PlayerEventKind::DealtFinalBlow)),
-            "playerDealtHealing" => Some(self.player_event(wir::PlayerEventKind::DealtHealing)),
-            "playerDied" => Some(self.player_event(wir::PlayerEventKind::Died)),
+            "global" => Some(Event::Global),
+            "eachPlayer" => Some(Event::EachPlayer),
+            "playerDealtDamage" => {
+                Some(self.player_event(workshop_rs::PlayerEventKind::DealtDamage))
+            }
+            "playerDealtFinalBlow" => {
+                Some(self.player_event(workshop_rs::PlayerEventKind::DealtFinalBlow))
+            }
+            "playerDealtHealing" => {
+                Some(self.player_event(workshop_rs::PlayerEventKind::DealtHealing))
+            }
+            "playerDied" => Some(self.player_event(workshop_rs::PlayerEventKind::Died)),
             "playerEarnedElimination" => {
-                Some(self.player_event(wir::PlayerEventKind::EarnedElimination))
+                Some(self.player_event(workshop_rs::PlayerEventKind::EarnedElimination))
             }
-            "playerJoined" => Some(self.player_event(wir::PlayerEventKind::Joined)),
-            "playerLeft" => Some(self.player_event(wir::PlayerEventKind::Left)),
+            "playerJoined" => Some(self.player_event(workshop_rs::PlayerEventKind::Joined)),
+            "playerLeft" => Some(self.player_event(workshop_rs::PlayerEventKind::Left)),
             "playerReceivedHealing" => {
-                Some(self.player_event(wir::PlayerEventKind::ReceivedHealing))
+                Some(self.player_event(workshop_rs::PlayerEventKind::ReceivedHealing))
             }
-            "playerTookDamage" => Some(self.player_event(wir::PlayerEventKind::TookDamage)),
+            "playerTookDamage" => Some(self.player_event(workshop_rs::PlayerEventKind::TookDamage)),
             "subroutine" => {
                 self.unsupported(
                     expr.span,
@@ -510,15 +455,15 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn player_event(&self, kind: wir::PlayerEventKind) -> wir::Event {
-        wir::Event::Player {
+    fn player_event(&self, kind: workshop_rs::PlayerEventKind) -> Event {
+        Event::Player {
             kind,
-            team: wir::EventTeam::All,
-            target: wir::EventTarget::All,
+            team: workshop_rs::EventTeam::All,
+            target: workshop_rs::EventTarget::All,
         }
     }
 
-    fn lower_actions(&mut self, block: &crate::hir::HirBlock) -> Vec<wir::ActionId> {
+    fn lower_actions(&mut self, block: &crate::hir::HirBlock) -> Vec<Action> {
         let mut actions = Vec::new();
         for stmt in &block.stmts {
             actions.extend(self.lower_stmt(stmt));
@@ -526,7 +471,7 @@ impl<'a> Lowerer<'a> {
         actions
     }
 
-    fn lower_rule_actions(&mut self, block: &crate::hir::HirBlock) -> Vec<wir::ActionId> {
+    fn lower_rule_actions(&mut self, block: &crate::hir::HirBlock) -> Vec<Action> {
         let mut actions = Vec::new();
         for stmt in &block.stmts {
             match &stmt.kind {
@@ -540,17 +485,13 @@ impl<'a> Lowerer<'a> {
         actions
     }
 
-    fn validate_rule_parameter_calls(
-        &mut self,
-        rule: &crate::hir::HirRule,
-        event: &wir::Event,
-    ) -> bool {
+    fn validate_rule_parameter_calls(&mut self, rule: &crate::hir::HirRule, event: &Event) -> bool {
         let mut calls = Vec::new();
         self.collect_direct_parameter_calls(&rule.body, &mut calls);
         if calls.is_empty() && !self.block_contains_non_direct_parameter_call(&rule.body) {
             return true;
         }
-        let mut valid = matches!(event, wir::Event::Global);
+        let mut valid = matches!(event, Event::Global);
         if self.block_contains_non_direct_parameter_call(&rule.body) {
             valid = false;
             self.unsupported(
@@ -1091,24 +1032,20 @@ impl<'a> Lowerer<'a> {
             return;
         }
         let index = self.allocate_index(None, false, hir_var.span);
-        let wir_id = self.out.global_variables.push(wir::WorkshopVariable {
-            name,
-            index,
-            span: self.ws_span(hir_var.span),
-            name_span: self.ws_span(hir_var.span),
-        });
-        self.rule_local_globals.insert(var, wir_id);
+        self.out
+            .global_variable(Variable::with_index(name.clone(), index));
+        self.rule_local_globals.insert(var, name);
     }
 
-    fn global_variable(&self, var: HirVarId) -> Option<wir::GlobalVarId> {
+    fn global_variable(&self, var: HirVarId) -> Option<&str> {
         self.global_vars
             .get(&var)
-            .copied()
-            .or_else(|| self.rule_local_globals.get(&var).copied())
-            .or_else(|| self.parameter_slots.get(&var).copied())
+            .map(String::as_str)
+            .or_else(|| self.rule_local_globals.get(&var).map(String::as_str))
+            .or_else(|| self.parameter_slots.get(&var).map(String::as_str))
     }
 
-    fn lower_stmt(&mut self, stmt: &HirStmt) -> Vec<wir::ActionId> {
+    fn lower_stmt(&mut self, stmt: &HirStmt) -> Vec<Action> {
         match &stmt.kind {
             HirStmtKind::Block(block) => self.lower_actions(block),
             HirStmtKind::Expr(expr) => match self.hir.expr(*expr).map(|e| &e.kind) {
@@ -1119,45 +1056,43 @@ impl<'a> Lowerer<'a> {
                 self.lower_assignment(*target, *op, *value, stmt.span)
             }
             HirStmtKind::If { cond, then, els } => {
-                let mut branches = Vec::new();
+                let mut actions = Vec::new();
                 let mut next = Some((cond, then.as_ref(), els.as_deref()));
-                let mut else_body = None;
                 while let Some((condition, then, els)) = next {
                     let Ok(condition) = self.lower_value(*condition) else {
                         return Vec::new();
                     };
-                    branches.push(wir::IfBranch {
-                        condition,
-                        body: self.lower_stmt(then),
+                    actions.push(if actions.is_empty() {
+                        Action::If { condition }
+                    } else {
+                        Action::ElseIf { condition }
                     });
+                    actions.extend(self.lower_stmt(then));
                     next = match els {
                         Some(HirStmt {
                             kind: HirStmtKind::If { cond, then, els },
                             ..
                         }) => Some((cond, then.as_ref(), els.as_deref())),
                         Some(body) => {
-                            else_body = Some(self.lower_stmt(body));
+                            actions.push(Action::Else);
+                            actions.extend(self.lower_stmt(body));
                             None
                         }
                         None => None,
                     };
                 }
-                vec![self.out.actions.push(wir::Action::If {
-                    branches,
-                    else_body,
-                    span: self.ws_span(stmt.span),
-                })]
+                actions.push(Action::End);
+                actions
             }
             HirStmtKind::While { cond, body } => {
                 let Ok(condition) = self.lower_value(*cond) else {
                     return Vec::new();
                 };
                 let body = self.lower_stmt(body);
-                vec![self.out.actions.push(wir::Action::While {
-                    condition,
-                    body,
-                    span: self.ws_span(stmt.span),
-                })]
+                let mut actions = vec![Action::While { condition }];
+                actions.extend(body);
+                actions.push(Action::End);
+                actions
             }
             HirStmtKind::AutoFor {
                 var,
@@ -1187,37 +1122,30 @@ impl<'a> Lowerer<'a> {
                 let body = self.lower_stmt(body);
                 match (
                     self.global_variable(*var),
-                    self.player_vars.get(var).copied(),
+                    self.player_vars.get(var).cloned(),
                 ) {
                     (Some(variable), _) => {
-                        vec![self.out.actions.push(wir::Action::ForGlobalVariable {
-                            variable,
+                        let mut actions = vec![Action::ForGlobalVariable {
+                            variable: variable.to_string(),
                             start,
                             stop,
                             step,
-                            body,
-                            span: self.ws_span(stmt.span),
-                            target_span: self
-                                .hir
-                                .vars
-                                .get(*var as usize)
-                                .and_then(|v| self.ws_span(v.span)),
-                        })]
+                        }];
+                        actions.extend(body);
+                        actions.push(Action::End);
+                        actions
                     }
                     (None, Some(variable)) => {
-                        let player = self.out.values.push(wir::ValueNode::new(
-                            wir::Value::EventPlayer,
-                            self.ws_span(stmt.span),
-                        ));
-                        vec![self.out.actions.push(wir::Action::ForPlayerVariable {
-                            player,
+                        let mut actions = vec![Action::ForPlayerVariable {
+                            player: Value::EventPlayer,
                             variable,
                             start,
                             stop,
                             step,
-                            body,
-                            span: self.ws_span(stmt.span),
-                        })]
+                        }];
+                        actions.extend(body);
+                        actions.push(Action::End);
+                        actions
                     }
                     _ => {
                         self.unsupported(
@@ -1241,7 +1169,7 @@ impl<'a> Lowerer<'a> {
                 let HirStmtKind::VarDecl { var, init } = stmt.kind else {
                     unreachable!();
                 };
-                let Some(variable) = self.rule_local_globals.get(&var).copied() else {
+                let Some(variable) = self.rule_local_globals.get(&var).cloned() else {
                     self.unsupported(
                         stmt.span,
                         "rule-local variable requires a same-rule global-event storage context",
@@ -1252,17 +1180,10 @@ impl<'a> Lowerer<'a> {
                 let Ok(value) = self.lower_value(init) else {
                     return Vec::new();
                 };
-                let target_span = self
-                    .hir
-                    .vars
-                    .get(var as usize)
-                    .and_then(|var| self.ws_span(var.span));
-                vec![self.out.actions.push(wir::Action::SetGlobalVariable {
-                    variable,
+                vec![Action::SetGlobalVariable {
+                    variable: variable.to_string(),
                     value,
-                    span: self.ws_span(stmt.span),
-                    target_span,
-                })]
+                }]
             }
             HirStmtKind::Foreach { .. } => {
                 let HirStmtKind::Foreach {
@@ -1276,11 +1197,7 @@ impl<'a> Lowerer<'a> {
                 self.lower_foreach(stmt.span, *var, *collection, body)
             }
             HirStmtKind::Return { value: None } => {
-                vec![self.out.actions.push(wir::Action::Call {
-                    name: "abort".to_string(),
-                    args: Vec::new(),
-                    span: self.ws_span(stmt.span),
-                })]
+                vec![Action::call("abort", std::iter::empty())]
             }
             HirStmtKind::Return { value: Some(_) }
             | HirStmtKind::Break
@@ -1314,21 +1231,15 @@ impl<'a> Lowerer<'a> {
         )
     }
 
-    fn allocate_runtime_global(&mut self, name: String, span: Span) -> wir::GlobalVarId {
+    fn allocate_runtime_global(&mut self, name: String, span: Span) -> String {
         let index = self.allocate_index(None, false, span);
-        self.out.global_variables.push(wir::WorkshopVariable {
-            name,
-            index,
-            span: self.ws_span(span),
-            name_span: self.ws_span(span),
-        })
+        self.out
+            .global_variable(Variable::with_index(name.clone(), index));
+        name
     }
 
-    fn global_value(&mut self, variable: wir::GlobalVarId, span: Span) -> wir::ValueId {
-        self.out.values.push(wir::ValueNode::new(
-            wir::Value::GlobalVariable(variable),
-            self.ws_span(span),
-        ))
+    fn global_value(&mut self, variable: &str, _span: Span) -> Value {
+        Value::GlobalVariable(variable.to_string())
     }
 
     fn lower_condition_auto_for(
@@ -1339,7 +1250,7 @@ impl<'a> Lowerer<'a> {
         condition: HirExprId,
         step: HirExprId,
         body: &HirStmt,
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         let Ok(start) = self.lower_value(start) else {
             return Vec::new();
         };
@@ -1349,34 +1260,19 @@ impl<'a> Lowerer<'a> {
         let mut body_actions = self.lower_stmt(body);
         let step_action = self.lower_postfix_action(step);
         body_actions.extend(step_action);
-        let target_span = self
-            .hir
-            .vars
-            .get(var as usize)
-            .and_then(|v| self.ws_span(v.span));
         let init = match (
             self.global_variable(var),
-            self.player_vars.get(&var).copied(),
+            self.player_vars.get(&var).cloned(),
         ) {
-            (Some(variable), _) => self.out.actions.push(wir::Action::SetGlobalVariable {
+            (Some(variable), _) => Action::SetGlobalVariable {
+                variable: variable.to_string(),
+                value: start,
+            },
+            (None, Some(variable)) => Action::SetPlayerVariable {
+                player: Value::EventPlayer,
                 variable,
                 value: start,
-                span: self.ws_span(span),
-                target_span,
-            }),
-            (None, Some(variable)) => {
-                let player = self.out.values.push(wir::ValueNode::new(
-                    wir::Value::EventPlayer,
-                    self.ws_span(span),
-                ));
-                self.out.actions.push(wir::Action::SetPlayerVariable {
-                    player,
-                    variable,
-                    value: start,
-                    span: self.ws_span(span),
-                    target_span,
-                })
-            }
+            },
             _ => {
                 self.unsupported(
                     span,
@@ -1385,12 +1281,12 @@ impl<'a> Lowerer<'a> {
                 return Vec::new();
             }
         };
-        let loop_action = self.out.actions.push(wir::Action::While {
-            condition,
-            body: body_actions,
-            span: self.ws_span(span),
-        });
-        vec![init, loop_action]
+        let mut loop_actions = vec![Action::While { condition }];
+        loop_actions.extend(body_actions);
+        loop_actions.push(Action::End);
+        let mut actions = vec![init];
+        actions.extend(loop_actions);
+        actions
     }
 
     fn lower_foreach(
@@ -1399,7 +1295,7 @@ impl<'a> Lowerer<'a> {
         var: HirVarId,
         collection: HirExprId,
         body: &HirStmt,
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         if self.player_context {
             self.unsupported(
                 span,
@@ -1439,7 +1335,7 @@ impl<'a> Lowerer<'a> {
             );
             return Vec::new();
         }
-        let Some(binder) = self.rule_local_globals.get(&var).copied() else {
+        let Some(binder) = self.rule_local_globals.get(&var).cloned() else {
             self.unsupported(
                 span,
                 "foreach binder requires a same-rule global-event storage context",
@@ -1471,79 +1367,42 @@ impl<'a> Lowerer<'a> {
         }
         let collection_temp = self.allocate_runtime_global(collection_name, collection_expr.span);
         let index_temp = self.allocate_runtime_global(index_name, span);
-        let collection_ref = self.global_value(collection_temp, collection_expr.span);
-        let index_ref = self.global_value(index_temp, span);
-        let zero = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Number {
-                value: 0.0,
-                text: "0".to_string(),
-            },
-            self.ws_span(span),
-        ));
-        let one = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Number {
-                value: 1.0,
-                text: "1".to_string(),
-            },
-            self.ws_span(span),
-        ));
-        let count = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Call {
-                name: "countOf".to_string(),
-                args: vec![collection_ref],
-            },
-            self.ws_span(span),
-        ));
-        let condition = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Call {
-                name: "<".to_string(),
-                args: vec![index_ref, count],
-            },
-            self.ws_span(span),
-        ));
-        let element = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Call {
-                name: "valueInArray".to_string(),
-                args: vec![collection_ref, index_ref],
-            },
-            self.ws_span(span),
-        ));
-        let mut loop_body = vec![self.out.actions.push(wir::Action::SetGlobalVariable {
+        let collection_ref = self.global_value(&collection_temp, collection_expr.span);
+        let index_ref = self.global_value(&index_temp, span);
+        let zero = Value::number(0.0);
+        let one = Value::number(1.0);
+        let count = Value::call("countOf", [collection_ref.clone()]);
+        let condition = Value::call("<", [index_ref.clone(), count]);
+        let element = Value::call("valueInArray", [collection_ref.clone(), index_ref]);
+        let mut loop_body = vec![Action::SetGlobalVariable {
             variable: binder,
             value: element,
-            span: self.ws_span(span),
-            target_span: self.ws_span(local.span),
-        })];
+        }];
         loop_body.extend(self.lower_stmt(body));
-        loop_body.push(self.out.actions.push(wir::Action::ModifyGlobalVariable {
-            variable: index_temp,
-            op: wir::ModifyOp::Add,
+        loop_body.push(Action::ModifyGlobalVariable {
+            variable: index_temp.clone(),
+            op: ModifyOp::Add,
             value: one,
-            span: self.ws_span(span),
-            target_span: self.ws_span(span),
-        }));
+        });
+        let mut loop_actions = vec![Action::While { condition }];
+        loop_actions.extend(loop_body);
+        loop_actions.push(Action::End);
         vec![
-            self.out.actions.push(wir::Action::SetGlobalVariable {
+            Action::SetGlobalVariable {
                 variable: collection_temp,
                 value: collection_value,
-                span: self.ws_span(span),
-                target_span: self.ws_span(collection_expr.span),
-            }),
-            self.out.actions.push(wir::Action::SetGlobalVariable {
+            },
+            Action::SetGlobalVariable {
                 variable: index_temp,
                 value: zero,
-                span: self.ws_span(span),
-                target_span: self.ws_span(span),
-            }),
-            self.out.actions.push(wir::Action::While {
-                condition,
-                body: loop_body,
-                span: self.ws_span(span),
-            }),
+            },
         ]
+        .into_iter()
+        .chain(loop_actions)
+        .collect()
     }
 
-    fn lower_loop_step(&mut self, id: HirExprId) -> Result<wir::ValueId, ()> {
+    fn lower_loop_step(&mut self, id: HirExprId) -> Result<Value, ()> {
         let Some(expr) = self.hir.expr(id).cloned() else {
             self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
             return Err(());
@@ -1553,13 +1412,7 @@ impl<'a> Lowerer<'a> {
                 crate::syntax::ast::PostfixOp::Increment => 1.0,
                 crate::syntax::ast::PostfixOp::Decrement => -1.0,
             };
-            return Ok(self.out.values.push(wir::ValueNode::new(
-                wir::Value::Number {
-                    value,
-                    text: format_number(value),
-                },
-                self.ws_span(expr.span),
-            )));
+            return Ok(Value::number(value));
         }
         self.lower_value(id)
     }
@@ -1593,7 +1446,7 @@ impl<'a> Lowerer<'a> {
         cond: Option<HirExprId>,
         step: Option<&HirStmt>,
         body: &HirStmt,
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         let Some(init) = init else {
             self.unsupported(span, "classic for-loop has no canonical start expression");
             return Vec::new();
@@ -1641,7 +1494,7 @@ impl<'a> Lowerer<'a> {
             _ => {
                 self.unsupported(
                     step_stmt.span,
-                    "classic for-loop step has no core WIR representation",
+                    "classic for-loop step has no canonical Workshop representation",
                 );
                 return Vec::new();
             }
@@ -1651,17 +1504,15 @@ impl<'a> Lowerer<'a> {
         }
         let mut body = self.lower_stmt(body);
         body.extend(step_actions);
-        let loop_action = self.out.actions.push(wir::Action::While {
-            condition: stop,
-            body,
-            span: self.ws_span(span),
-        });
+        let mut loop_actions = vec![Action::While { condition: stop }];
+        loop_actions.extend(body);
+        loop_actions.push(Action::End);
         let mut actions = init_actions;
-        actions.push(loop_action);
+        actions.extend(loop_actions);
         actions
     }
 
-    fn lower_postfix_action(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
+    fn lower_postfix_action(&mut self, id: HirExprId) -> Vec<Action> {
         let Some(expr) = self.hir.expr(id).cloned() else {
             self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
             return Vec::new();
@@ -1678,46 +1529,27 @@ impl<'a> Lowerer<'a> {
             );
             return Vec::new();
         };
-        let value = self.out.values.push(wir::ValueNode::new(
-            wir::Value::Number {
-                value: 1.0,
-                text: "1".to_string(),
-            },
-            self.ws_span(expr.span),
-        ));
+        let value = Value::number(1.0);
         let modify = match op {
-            crate::syntax::ast::PostfixOp::Increment => wir::ModifyOp::Add,
-            crate::syntax::ast::PostfixOp::Decrement => wir::ModifyOp::Subtract,
+            crate::syntax::ast::PostfixOp::Increment => ModifyOp::Add,
+            crate::syntax::ast::PostfixOp::Decrement => ModifyOp::Subtract,
         };
-        let target_span = self
-            .hir
-            .vars
-            .get(var as usize)
-            .and_then(|v| self.ws_span(v.span));
         match (
             self.global_variable(var),
-            self.player_vars.get(&var).copied(),
+            self.player_vars.get(&var).cloned(),
         ) {
-            (Some(variable), _) => vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
-                variable,
+            (Some(variable), _) => vec![Action::ModifyGlobalVariable {
+                variable: variable.to_string(),
                 op: modify,
                 value,
-                span: self.ws_span(expr.span),
-                target_span,
-            })],
+            }],
             (None, Some(variable)) => {
-                let player = self.out.values.push(wir::ValueNode::new(
-                    wir::Value::EventPlayer,
-                    self.ws_span(expr.span),
-                ));
-                vec![self.out.actions.push(wir::Action::ModifyPlayerVariable {
-                    player,
+                vec![Action::ModifyPlayerVariable {
+                    player: Value::EventPlayer,
                     variable,
                     op: modify,
                     value,
-                    span: self.ws_span(expr.span),
-                    target_span,
-                })]
+                }]
             }
             _ => {
                 self.unsupported(
@@ -1734,7 +1566,7 @@ impl<'a> Lowerer<'a> {
         span: Span,
         scrutinee: HirExprId,
         arms: &[crate::hir::HirSwitchArm],
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         let scrutinee_span = self
             .hir
             .expr(scrutinee)
@@ -1773,14 +1605,11 @@ impl<'a> Lowerer<'a> {
                 format!("__del_runtime_switch_{}", self.out.global_variables.len()),
                 scrutinee_span,
             );
-            let value = self.global_value(variable, scrutinee_span);
-            prefix.push(self.out.actions.push(wir::Action::SetGlobalVariable {
-                variable,
+            prefix.push(Action::SetGlobalVariable {
+                variable: variable.clone(),
                 value: lowered_scrutinee,
-                span: self.ws_span(scrutinee_span),
-                target_span: self.ws_span(scrutinee_span),
-            }));
-            value
+            });
+            Value::GlobalVariable(variable)
         };
         let mut branches = Vec::new();
         let mut default_body = None;
@@ -1793,27 +1622,28 @@ impl<'a> Lowerer<'a> {
             let Ok(label) = self.lower_value(label) else {
                 return Vec::new();
             };
-            let condition = self.out.values.push(wir::ValueNode::new(
-                wir::Value::Call {
-                    name: "==".to_string(),
-                    args: vec![scrutinee, label],
-                },
-                self.ws_span(arm.span),
+            branches.push((
+                Value::call("==", [scrutinee.clone(), label]),
+                self.lower_switch_arm_body(arms, index),
             ));
-            branches.push(wir::IfBranch {
-                condition,
-                body: self.lower_switch_arm_body(arms, index),
-            });
         }
         if branches.is_empty() && default_body.is_none() {
             self.unsupported(span, "switch has no canonical case or default arm");
             return Vec::new();
         }
-        prefix.push(self.out.actions.push(wir::Action::If {
-            branches,
-            else_body: default_body,
-            span: self.ws_span(span),
-        }));
+        for (index, (condition, body)) in branches.into_iter().enumerate() {
+            prefix.push(if index == 0 {
+                Action::If { condition }
+            } else {
+                Action::ElseIf { condition }
+            });
+            prefix.extend(body);
+        }
+        if let Some(body) = default_body {
+            prefix.push(Action::Else);
+            prefix.extend(body);
+        }
+        prefix.push(Action::End);
         prefix
     }
 
@@ -1833,7 +1663,7 @@ impl<'a> Lowerer<'a> {
         &mut self,
         arms: &[crate::hir::HirSwitchArm],
         start: usize,
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         for arm in arms.iter().skip(start) {
             for stmt in &arm.stmts {
@@ -1846,7 +1676,7 @@ impl<'a> Lowerer<'a> {
         actions
     }
 
-    fn lower_expr_action(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
+    fn lower_expr_action(&mut self, id: HirExprId) -> Vec<Action> {
         let Some(expr) = self.hir.expr(id).cloned() else {
             self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
             return Vec::new();
@@ -1879,11 +1709,10 @@ impl<'a> Lowerer<'a> {
                     let Ok(args) = self.lower_args(&args, info.params.as_deref()) else {
                         return Vec::new();
                     };
-                    vec![self.out.actions.push(wir::Action::Call {
+                    vec![Action::Call {
                         name: info.canonical_id,
                         args,
-                        span: self.ws_span(expr.span),
-                    })]
+                    }]
                 }
                 CallTarget::Func(fid) => self.call_subroutine(fid, expr.span),
                 CallTarget::BuiltinArrayMethod {
@@ -2006,12 +1835,7 @@ impl<'a> Lowerer<'a> {
         None
     }
 
-    fn lower_array_append(
-        &mut self,
-        base: HirExprId,
-        args: &[HirArg],
-        span: Span,
-    ) -> Vec<wir::ActionId> {
+    fn lower_array_append(&mut self, base: HirExprId, args: &[HirArg], span: Span) -> Vec<Action> {
         let Some(HirExprKind::VarRef { var }) = self.hir.expr(base).map(|expr| &expr.kind) else {
             self.unsupported(span, "array append target is not a Workshop variable");
             return Vec::new();
@@ -2024,31 +1848,22 @@ impl<'a> Lowerer<'a> {
             return Vec::new();
         }
         let value = values.remove(0);
-        let target_span = self.hir.expr(base).and_then(|expr| self.ws_span(expr.span));
         match (
-            self.global_vars.get(var).copied(),
-            self.player_vars.get(var).copied(),
+            self.global_vars.get(var).cloned(),
+            self.player_vars.get(var).cloned(),
         ) {
-            (Some(variable), _) => vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
+            (Some(variable), _) => vec![Action::ModifyGlobalVariable {
                 variable,
-                op: wir::ModifyOp::AppendToArray,
+                op: ModifyOp::AppendToArray,
                 value,
-                span: self.ws_span(span),
-                target_span,
-            })],
+            }],
             (None, Some(variable)) => {
-                let player = self.out.values.push(wir::ValueNode::new(
-                    wir::Value::EventPlayer,
-                    self.ws_span(span),
-                ));
-                vec![self.out.actions.push(wir::Action::ModifyPlayerVariable {
-                    player,
+                vec![Action::ModifyPlayerVariable {
+                    player: Value::EventPlayer,
                     variable,
-                    op: wir::ModifyOp::AppendToArray,
+                    op: ModifyOp::AppendToArray,
                     value,
-                    span: self.ws_span(span),
-                    target_span,
-                })]
+                }]
             }
             _ => {
                 self.unsupported(
@@ -2060,13 +1875,9 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn call_subroutine(&mut self, fid: HirFuncId, span: Span) -> Vec<wir::ActionId> {
-        if let Some(subroutine) = self.subroutines.get(&fid).copied() {
-            vec![self.out.actions.push(wir::Action::CallSubroutine {
-                subroutine,
-                span: self.ws_span(span),
-                callee_span: self.ws_span(span),
-            })]
+    fn call_subroutine(&mut self, fid: HirFuncId, span: Span) -> Vec<Action> {
+        if let Some(subroutine) = self.subroutines.get(&fid).cloned() {
+            vec![Action::CallSubroutine { subroutine }]
         } else {
             self.unsupported(span, "call target is not a canonical Workshop subroutine");
             Vec::new()
@@ -2102,7 +1913,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_direct_parameter_call(&mut self, id: HirExprId) -> Vec<wir::ActionId> {
+    fn lower_direct_parameter_call(&mut self, id: HirExprId) -> Vec<Action> {
         let Some(expr) = self.hir.expr(id).cloned() else {
             return Vec::new();
         };
@@ -2180,23 +1991,16 @@ impl<'a> Lowerer<'a> {
             else {
                 return Vec::new();
             };
-            let Some(variable) = self.parameter_slots.get(&var).copied() else {
+            let Some(variable) = self.parameter_slots.get(&var).cloned() else {
                 return Vec::new();
             };
             let Ok(value_node) = self.lower_value(value) else {
                 return Vec::new();
             };
-            let value_span = self
-                .hir
-                .expr(value)
-                .map(|value| value.span)
-                .unwrap_or(expr.span);
-            actions.push(self.out.actions.push(wir::Action::SetGlobalVariable {
+            actions.push(Action::SetGlobalVariable {
                 variable,
                 value: value_node,
-                span: self.ws_span(value_span),
-                target_span: self.ws_span(func.params[index].span),
-            }));
+            });
         }
         actions.extend(self.call_subroutine(fid, expr.span));
         actions
@@ -2208,12 +2012,11 @@ impl<'a> Lowerer<'a> {
         op: AssignOp,
         value: HirExprId,
         span: Span,
-    ) -> Vec<wir::ActionId> {
+    ) -> Vec<Action> {
         let Some(target_expr) = self.hir.expr(target).cloned() else {
             self.unsupported(span, "assignment target is not a known HIR expression");
             return Vec::new();
         };
-        let target_span = self.ws_span(target_expr.span);
         let HirExprKind::VarRef { var } = target_expr.kind else {
             self.unsupported(span, "assignment target is not a Workshop variable");
             return Vec::new();
@@ -2224,48 +2027,37 @@ impl<'a> Lowerer<'a> {
         let modify = self.modify_op(op, span);
         match (
             self.global_variable(var),
-            self.player_vars.get(&var).copied(),
+            self.player_vars.get(&var).cloned(),
         ) {
             (Some(variable), _) => {
                 if let Some(op) = modify {
-                    vec![self.out.actions.push(wir::Action::ModifyGlobalVariable {
-                        variable,
+                    vec![Action::ModifyGlobalVariable {
+                        variable: variable.to_string(),
                         op,
                         value,
-                        span: self.ws_span(span),
-                        target_span,
-                    })]
+                    }]
                 } else {
-                    vec![self.out.actions.push(wir::Action::SetGlobalVariable {
-                        variable,
+                    vec![Action::SetGlobalVariable {
+                        variable: variable.to_string(),
                         value,
-                        span: self.ws_span(span),
-                        target_span,
-                    })]
+                    }]
                 }
             }
             (None, Some(variable)) => {
-                let player = self.out.values.push(wir::ValueNode::new(
-                    wir::Value::EventPlayer,
-                    self.ws_span(span),
-                ));
+                let player = Value::EventPlayer;
                 if let Some(op) = modify {
-                    vec![self.out.actions.push(wir::Action::ModifyPlayerVariable {
+                    vec![Action::ModifyPlayerVariable {
                         player,
                         variable,
                         op,
                         value,
-                        span: self.ws_span(span),
-                        target_span,
-                    })]
+                    }]
                 } else {
-                    vec![self.out.actions.push(wir::Action::SetPlayerVariable {
+                    vec![Action::SetPlayerVariable {
                         player,
                         variable,
                         value,
-                        span: self.ws_span(span),
-                        target_span,
-                    })]
+                    }]
                 }
             }
             _ => {
@@ -2275,15 +2067,15 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn modify_op(&mut self, op: AssignOp, _span: Span) -> Option<wir::ModifyOp> {
+    fn modify_op(&mut self, op: AssignOp, _span: Span) -> Option<ModifyOp> {
         match op {
             AssignOp::Assign => None,
-            AssignOp::Add => Some(wir::ModifyOp::Add),
-            AssignOp::Sub => Some(wir::ModifyOp::Subtract),
-            AssignOp::Mul => Some(wir::ModifyOp::Multiply),
-            AssignOp::Div => Some(wir::ModifyOp::Divide),
-            AssignOp::Mod => Some(wir::ModifyOp::Modulo),
-            AssignOp::Pow => Some(wir::ModifyOp::RaiseToPower),
+            AssignOp::Add => Some(ModifyOp::Add),
+            AssignOp::Sub => Some(ModifyOp::Subtract),
+            AssignOp::Mul => Some(ModifyOp::Multiply),
+            AssignOp::Div => Some(ModifyOp::Divide),
+            AssignOp::Mod => Some(ModifyOp::Modulo),
+            AssignOp::Pow => Some(ModifyOp::RaiseToPower),
         }
     }
 
@@ -2291,7 +2083,7 @@ impl<'a> Lowerer<'a> {
         &mut self,
         args: &[HirArg],
         params: Option<&[ExternalParam]>,
-    ) -> Result<Vec<wir::ValueId>, ()> {
+    ) -> Result<Vec<Value>, ()> {
         let Some(params) = params else {
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
@@ -2381,25 +2173,22 @@ impl<'a> Lowerer<'a> {
         Ok(slots.into_iter().take(highest + 1).flatten().collect())
     }
 
-    fn lower_catalog_default(&mut self, default: &str, span: Span) -> Result<wir::ValueId, ()> {
+    fn lower_catalog_default(&mut self, default: &str, span: Span) -> Result<Value, ()> {
         let value = if default == "null" {
-            wir::Value::Null
+            Value::Null
         } else if default == "eventPlayer" {
-            wir::Value::EventPlayer
+            Value::EventPlayer
         } else if let Ok(number) = default.parse::<f64>() {
-            wir::Value::Number {
-                value: number,
-                text: format_number(number),
-            }
+            Value::Number(number)
         } else if let Some((value_type, value)) = default.split_once('.') {
-            wir::Value::Enum {
+            Value::Enum {
                 value_type: value_type.to_string(),
                 value: value.to_string(),
             }
         } else if (default.starts_with('"') && default.ends_with('"'))
             || (default.starts_with('\'') && default.ends_with('\''))
         {
-            wir::Value::String(unquote(default))
+            Value::String(unquote(default))
         } else {
             let catalog = match Catalog::builtin() {
                 Ok(catalog) => catalog,
@@ -2414,7 +2203,9 @@ impl<'a> Lowerer<'a> {
             let Some(entry) = catalog.entry(Kind::Value, default) else {
                 self.unsupported(
                     span,
-                    format!("catalog default '{default}' has no core WIR materialization"),
+                    format!(
+                        "catalog default '{default}' has no canonical Workshop materialization"
+                    ),
                 );
                 return Err(());
             };
@@ -2432,29 +2223,22 @@ impl<'a> Lowerer<'a> {
                 };
                 args.push(self.lower_catalog_default(default, span)?);
             }
-            wir::Value::Call {
+            Value::Call {
                 name: entry.id.clone(),
                 args,
             }
         };
-        Ok(self
-            .out
-            .values
-            .push(wir::ValueNode::new(value, self.ws_span(span))))
+        Ok(value)
     }
 
-    fn lower_value(&mut self, id: HirExprId) -> Result<wir::ValueId, ()> {
+    fn lower_value(&mut self, id: HirExprId) -> Result<Value, ()> {
         let expr = self.hir.expr(id).cloned().ok_or_else(|| {
             self.unsupported(self.fallback_span(), format!("unknown HIR expression {id}"));
         })?;
-        let span = self.ws_span(expr.span);
         let value = match expr.kind {
             HirExprKind::Literal(literal) => match literal {
-                LiteralValue::Number(value) => wir::Value::Number {
-                    value,
-                    text: format_number(value),
-                },
-                LiteralValue::Str(value) => wir::Value::String(unquote(&value)),
+                LiteralValue::Number(value) => Value::Number(value),
+                LiteralValue::Str(value) => Value::String(unquote(&value)),
                 LiteralValue::LocalizedStr(value) => {
                     let spelling = unquote(value.strip_prefix('@').unwrap_or(&value));
                     let catalog = Catalog::builtin().map_err(|error| {
@@ -2480,20 +2264,19 @@ impl<'a> Lowerer<'a> {
                         );
                         return Err(());
                     };
-                    wir::Value::LocalizedString(localized.id.clone())
+                    Value::LocalizedString(localized.id.clone())
                 }
-                LiteralValue::Bool(value) => wir::Value::Bool(value),
-                LiteralValue::Null => wir::Value::Null,
+                LiteralValue::Bool(value) => Value::Bool(value),
+                LiteralValue::Null => Value::Null,
             },
             HirExprKind::VarRef { var } => {
                 if let Some(variable) = self.global_variable(var) {
-                    wir::Value::GlobalVariable(variable)
-                } else if let Some(variable) = self.player_vars.get(&var).copied() {
-                    let player = self
-                        .out
-                        .values
-                        .push(wir::ValueNode::new(wir::Value::EventPlayer, span));
-                    wir::Value::PlayerVariable { player, variable }
+                    Value::GlobalVariable(variable.to_string())
+                } else if let Some(variable) = self.player_vars.get(&var).cloned() {
+                    Value::PlayerVariable {
+                        player: Box::new(Value::EventPlayer),
+                        variable,
+                    }
                 } else {
                     self.unsupported(
                         expr.span,
@@ -2543,12 +2326,12 @@ impl<'a> Lowerer<'a> {
                         _ => {
                             self.unsupported(
                                 expr.span,
-                                "array method has no canonical core WIR lowering",
+                                "array method has no canonical Workshop lowering",
                             );
                             return Err(());
                         }
                     };
-                    wir::Value::Call {
+                    Value::Call {
                         name: name.to_string(),
                         args: all,
                     }
@@ -2564,7 +2347,7 @@ impl<'a> Lowerer<'a> {
             HirExprKind::Binary { op, lhs, rhs } => {
                 let name = binary_name(op);
                 let args = vec![self.lower_value(lhs)?, self.lower_value(rhs)?];
-                wir::Value::Call {
+                Value::Call {
                     name: name.to_string(),
                     args,
                 }
@@ -2572,24 +2355,21 @@ impl<'a> Lowerer<'a> {
             HirExprKind::Unary { op, operand } => match op {
                 UnaryOp::Negate => {
                     let operand = self.lower_value(operand)?;
-                    let minus_one = self.out.values.push(wir::ValueNode::new(
-                        wir::Value::Number {
-                            value: -1.0,
-                            text: "-1".to_string(),
-                        },
-                        span,
-                    ));
-                    wir::Value::Call {
+                    let minus_one = Value::number(-1.0);
+                    Value::Call {
                         name: "multiply".to_string(),
                         args: vec![minus_one, operand],
                     }
                 }
-                UnaryOp::Not => wir::Value::Call {
+                UnaryOp::Not => Value::Call {
                     name: "not".to_string(),
                     args: vec![self.lower_value(operand)?],
                 },
                 UnaryOp::Indirect => {
-                    self.unsupported(expr.span, "Workshop indirection has no core WIR lowering");
+                    self.unsupported(
+                        expr.span,
+                        "Workshop indirection has no canonical Workshop lowering",
+                    );
                     return Err(());
                 }
             },
@@ -2598,13 +2378,13 @@ impl<'a> Lowerer<'a> {
                 for elem in elems {
                     values.push(self.lower_value(elem)?);
                 }
-                wir::Value::Array(values)
+                Value::Array(values)
             }
-            HirExprKind::Index { base, index } => wir::Value::Call {
+            HirExprKind::Index { base, index } => Value::Call {
                 name: "valueInArray".to_string(),
                 args: vec![self.lower_value(base)?, self.lower_value(index)?],
             },
-            HirExprKind::Ternary { cond, then, els } => wir::Value::Call {
+            HirExprKind::Ternary { cond, then, els } => Value::Call {
                 name: "ifThenElse".to_string(),
                 args: vec![
                     self.lower_value(cond)?,
@@ -2618,7 +2398,7 @@ impl<'a> Lowerer<'a> {
             HirExprKind::StrInterp { parts, args } => {
                 if parts.len() == 1 && args.is_empty() {
                     if let HirInterpPart::Hole(base) = &parts[0] {
-                        wir::Value::Call {
+                        Value::Call {
                             name: "customString".to_string(),
                             args: vec![self.lower_value(*base)?],
                         }
@@ -2639,7 +2419,7 @@ impl<'a> Lowerer<'a> {
                             .map(|arg| self.lower_value(arg))
                             .collect::<Result<Vec<_>, _>>()?,
                     );
-                    wir::Value::Call {
+                    Value::Call {
                         name: "customString".to_string(),
                         args: values,
                     }
@@ -2655,12 +2435,8 @@ impl<'a> Lowerer<'a> {
                             }
                         }
                     }
-                    let template = self
-                        .out
-                        .values
-                        .push(wir::ValueNode::new(wir::Value::String(template), span));
-                    values.insert(0, template);
-                    wir::Value::Call {
+                    values.insert(0, Value::String(template));
+                    Value::Call {
                         name: "customString".to_string(),
                         args: values,
                     }
@@ -2683,26 +2459,26 @@ impl<'a> Lowerer<'a> {
                 return Err(());
             }
         };
-        Ok(self.out.values.push(wir::ValueNode::new(value, span)))
+        Ok(value)
     }
 
     fn value_from_binding(
         &mut self,
         binding: ExternalBinding,
-        args: Vec<wir::ValueId>,
+        args: Vec<Value>,
         span: Span,
-    ) -> Result<wir::Value, ()> {
+    ) -> Result<Value, ()> {
         match binding {
             ExternalBinding::Value(info) => {
                 if let Some((value_type, value)) = info.canonical_id.split_once('.') {
                     if args.is_empty() {
-                        return Ok(wir::Value::Enum {
+                        return Ok(Value::Enum {
                             value_type: value_type.to_string(),
                             value: value.to_string(),
                         });
                     }
                 }
-                Ok(wir::Value::Call {
+                Ok(Value::Call {
                     name: info.canonical_id,
                     args,
                 })
@@ -2767,7 +2543,7 @@ impl<'a> Lowerer<'a> {
         if let Err(error) = self.out.validate() {
             self.unsupported(
                 self.fallback_span(),
-                format!("canonical WIR validation failed: {error}"),
+                format!("canonical Workshop program validation failed: {error}"),
             );
         }
         match Catalog::builtin() {
@@ -2805,19 +2581,6 @@ impl<'a> Lowerer<'a> {
         Span::new(FileId(0), 0, 0)
     }
 
-    fn ws_span(&self, span: Span) -> Option<WorkshopSpan> {
-        let source = self.sources.files().nth(span.file.0 as usize)?;
-        let start = self.sources.line_col(span, span.start);
-        let end = self.sources.line_col(span, span.end);
-        let file = workshop_rs::ids::Id::from_index(span.file.0 as usize);
-        let _ = source;
-        Some(WorkshopSpan::new(
-            file,
-            Position::new(start.line, start.col),
-            Position::new(end.line, end.col),
-        ))
-    }
-
     fn hir_arg_span(&self, arg: &HirArg) -> Span {
         let id = match arg {
             HirArg::Pos(id) | HirArg::Named { value: id, .. } => *id,
@@ -2845,14 +2608,6 @@ fn binary_name(op: BinaryOp) -> &'static str {
         BinaryOp::Ge => ">=",
         BinaryOp::And => "and",
         BinaryOp::Or => "or",
-    }
-}
-
-fn format_number(value: f64) -> String {
-    if value.fract() == 0.0 {
-        format!("{value:.0}")
-    } else {
-        value.to_string()
     }
 }
 
