@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-12
-- Related: [Issue #6](https://github.com/wrightkit/deltin-rs/issues/6), [#29](https://github.com/wrightkit/deltin-rs/issues/29), [#30](https://github.com/wrightkit/deltin-rs/issues/30), [#91](https://github.com/wrightkit/deltin-rs/issues/91), [#107](https://github.com/wrightkit/deltin-rs/issues/107), [`workshop-boundary.md`](../architecture/workshop-boundary.md)
+- Related: [Issue #6](https://github.com/wrightkit/deltin-rs/issues/6), [#29](https://github.com/wrightkit/deltin-rs/issues/29), [#30](https://github.com/wrightkit/deltin-rs/issues/30), [#91](https://github.com/wrightkit/deltin-rs/issues/91), [#107](https://github.com/wrightkit/deltin-rs/issues/107), [workshop-rs #179](https://github.com/wrightkit/workshop-rs/issues/179), [`workshop-boundary.md`](../architecture/workshop-boundary.md)
 
 ## Context
 
@@ -15,7 +15,8 @@ documents preserve.
 
 Historical evidence: the [typed HIR contract in #6](https://github.com/wrightkit/deltin-rs/issues/6),
 the [provider/lowering boundary in #30](https://github.com/wrightkit/deltin-rs/issues/30),
-and the [binding-preparation split in #91](https://github.com/wrightkit/deltin-rs/issues/91).
+the [binding-preparation split in #91](https://github.com/wrightkit/deltin-rs/issues/91),
+and the externally owned [Program boundary in workshop-rs PR #185](https://github.com/wrightkit/workshop-rs/pull/185).
 
 ## Decision
 
@@ -56,8 +57,11 @@ support states must remain separately reported.
 
 ## Open questions
 
-The completion of the canonical public `Program` API and any metadata contract
-is coordinated with `workshop-rs` and remains tracked by [deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107)
-and [workshop-rs #179](https://github.com/wrightkit/workshop-rs/issues/179).
-Those migrations must not be represented as accepted history here until their
-owner-side contract and consumer evidence are complete.
+The canonical public `Program` boundary is an externally owned, completed
+decision recorded in [workshop-rs #179](https://github.com/wrightkit/workshop-rs/issues/179)
+and delivered by [PR #185](https://github.com/wrightkit/workshop-rs/pull/185).
+Remaining DEL consumer migration and provenance acceptance are tracked by
+[deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107), while the
+DEL runtime ABI remains unresolved in [#104](https://github.com/wrightkit/deltin-rs/issues/104).
+Those DEL changes must not be represented as accepted history here until their
+consumer evidence is complete.

@@ -38,8 +38,9 @@ metadata, support evidence, and integrations establish current reality.
 | Backfilled ADR | #6, #29, #30, #91 HIR and Workshop boundary | ADR-0003 records source-owned semantics and DEL-owned lowering into canonical Workshop. |
 | Backfilled ADR | #90/#92 semantic checker extraction | ADR-0004 records responsibility locality; it does not freeze file decomposition. |
 | Historical-log-covered / non-ADR detail | Q1–Q16 and bounded #31 lowering slices in [`decisions.md`](../decisions.md) | Retain the historical pointer and Git provenance; do not create one ADR per language rule or lowering slice. |
+| Externally owned / completed | Canonical Workshop `Program` API and public operations, accepted in [workshop-rs #179](https://github.com/wrightkit/workshop-rs/issues/179) and delivered by [PR #185](https://github.com/wrightkit/workshop-rs/pull/185) | This is an accepted `workshop-rs` decision; its DEL consumer consequences remain tracked separately. |
 | Externally owned | Canonical Workshop catalog, WIR, settings, localization, validation, and emission | These decisions belong to `workshop-rs`. |
-| Unresolved / externally coordinated | Canonical `Program` API completion and metadata contract in [deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107) and [workshop-rs #179](https://github.com/wrightkit/workshop-rs/issues/179); DEL runtime ABI in [#104](https://github.com/wrightkit/deltin-rs/issues/104) | No accepted ADR is backfilled until the owning contract is decided and evidenced. |
+| Unresolved / externally coordinated | Remaining DEL consumer migration and provenance acceptance in [#107](https://github.com/wrightkit/deltin-rs/issues/107); DEL runtime ABI in [#104](https://github.com/wrightkit/deltin-rs/issues/104) | No accepted ADR is backfilled until the remaining owner contract and evidence are complete. |
 
 The current architecture documents remain the authority for present invariants.
 An ADR does not claim that every capability mentioned in its historical source

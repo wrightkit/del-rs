@@ -50,6 +50,5 @@ their own compatibility evidence when changed.
 ## Open questions
 
 Future library compiler or reconstruction APIs require their own approved
-contracts. The canonical Workshop `Program` API and metadata boundary are
-tracked separately in [deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107)
-and its `workshop-rs` dependency work.
+contracts. The remaining DEL consumer migration and provenance acceptance are
+tracked separately in [deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107).
