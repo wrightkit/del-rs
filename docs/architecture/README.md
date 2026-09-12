@@ -20,4 +20,12 @@ Use it for substantive implementation preflight. Keep these evidence classes sep
 | Syntax observations | [`../syntax-notes.md`](../syntax-notes.md), when consistent with upstream/current evidence |
 | CLI contract | [`../cli.md`](../cli.md) |
 
+## Decision history
+
+[`docs/adr/`](../adr/README.md) records the rationale for durable architecture
+choices. It is separate from this current contract and from implementation
+reality. The registry classifies historical material, externally owned
+decisions, and unresolved future work so that proposed migrations are not read
+as accepted architecture.
+
 Do not put current dependency versions, crate layout snapshots, feature counts, Issue progress, milestone state, or transient lowering gaps in this directory. If an Issue, historical design note, current contract, and code reality disagree, surface the mismatch before implementation.

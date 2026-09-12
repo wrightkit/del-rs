@@ -9,9 +9,13 @@ DEL / OSTW source
     ↓
 deltin-rs parsing / project / semantic implementation
     ↓
+deltin-rs typed DEL HIR
+    ↓
 deltin-rs runtime + compiler lowering
     ↓
-workshop-rs canonical WIR / validation / emission
+canonical public workshop_rs::Program
+    ↓
+Workshop validation / emission
     ↓
 Workshop text
 ```
@@ -21,7 +25,7 @@ For reconstruction:
 ```text
 Workshop text
     ↓
-workshop-rs parser / canonical WIR
+workshop-rs parser / canonical public workshop_rs::Program
     ↓
 deltin-rs reconstruction
     ↓
@@ -34,9 +38,13 @@ The durable Rust dependency direction is `deltin-rs → workshop-rs`; `workshop-
 
 High-level DEL/OSTW concepts such as object/reference lifetime, classes, virtual dispatch, closures/captures, recursion, storage intent, project semantics, and source-language control/type behavior remain `deltin-rs` responsibilities even when their compiled representation uses Workshop primitives.
 
-`workshop-rs` owns canonical Workshop identities, WIR, raw Workshop validation, settings/localization, and emission. It does not own DEL runtime layouts or compiler helper strategies.
+`workshop-rs` owns the public `Program` model, canonical Workshop identities,
+raw Workshop validation, settings/localization, and emission. Its arena-backed
+WIR/storage representation may support internal normalization or analysis, but
+it is not the public DEL-facing contract. `workshop-rs` does not own DEL runtime
+layouts or compiler helper strategies.
 
-A missing canonical Workshop primitive is fixed in `workshop-rs` only when the requirement is independently a Workshop concept. Otherwise `deltin-rs` must lower the source behavior using canonical primitives or report an explicit unsupported boundary.
+A missing canonical Workshop primitive is fixed in `workshop-rs` only when the requirement is independently a Workshop concept. Otherwise `deltin-rs` must lower the source behavior through the public `Program` model or report an explicit unsupported boundary.
 
 ## HIR boundary
 
