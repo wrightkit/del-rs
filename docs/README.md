@@ -9,6 +9,7 @@ This directory is the durable documentation surface for `deltin-rs`. The root
 architecture/README.md       current architecture routing
   ├─ language-core.md        current DEL/OSTW language/semantic contract
   └─ workshop-boundary.md    current runtime/lowering ownership boundary
+adr/                         point-in-time architecture decision history
 support-matrix.toml          current evidenced support state
 compatibility.md             support/evidence methodology
 provenance.md                pinned reference/licensing provenance
@@ -29,6 +30,8 @@ then inspect current source/tests/support evidence and the Issue contract.
   and feature locality.
 - [DEL/OSTW / Workshop boundary](architecture/workshop-boundary.md): runtime and
   lowering ownership, typed HIR intent, and canonical Workshop boundary.
+- [`adr/`](adr/README.md) — normalized rationale for durable architecture
+  decisions, with explicit historical, external, and unresolved classifications.
 - [Repository agent guidance](../AGENTS.md): implementation preflight,
   provenance, validation, and delivery.
 
