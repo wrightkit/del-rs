@@ -190,7 +190,7 @@ pub const DIAGNOSTIC_CODES: &[(&str, &str)] = &[
     ("HI017", "interpolation/async/hook shape violation"),
     (
         "HI018",
-        "HIR construct cannot be lowered to canonical Workshop WIR",
+        "HIR construct cannot be lowered to the canonical Workshop program",
     ),
     (
         "HI099",

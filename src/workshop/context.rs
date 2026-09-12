@@ -12,8 +12,9 @@ struct ExternalKey {
     namespace: Vec<String>,
 }
 
-/// DEL-owned handoff from semantic provider resolution to canonical WIR
-/// lowering. It contains only the resolved external bindings and their source
+/// DEL-owned handoff from semantic provider resolution to the canonical
+/// Workshop program lowering.
+/// It contains only the resolved external bindings and their source
 /// lookup keys required by the Workshop backend.
 pub(super) struct WorkshopLoweringContext {
     bindings: HashMap<ExternalKey, ExternalBinding>,

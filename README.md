@@ -20,7 +20,7 @@ DEL semantic model / typed HIR
     ↓
 deltin-rs runtime + compiler lowering
     ↓
-workshop-rs canonical WIR / validation / emission
+workshop-rs canonical Program / validation / emission
     ↓
 Workshop text
 ```
@@ -39,7 +39,8 @@ The reverse direction starts with Workshop parsed by `workshop-rs` and uses
 - Typed representation: high-level semantic model that stays backend-neutral
   until lowering.
 - Semantic queries: symbol, reference, and type lookups for editors and Wright.
-- Workshop code generation: lowers DEL HIR into canonical `workshop-rs` WIR with
+- Workshop code generation: lowers DEL HIR into the canonical `workshop-rs`
+  `Program` model with
   explicit error reporting for unsupported runtime behavior.
 - Verified compatibility: validated against corpus fixtures, oracle snapshots,
   and differential tests.
@@ -60,7 +61,7 @@ temporary variables, or output-text identity.
 | Generics / lambdas / pattern matching / recursion | ✅ Semantic support | End-to-end Workshop behavior remains evidence-gated where applicable |
 | Embedded Workshop / lobby data | 🟡 Partial | Canonical Workshop contracts are still being integrated |
 | Workshop builtins | 🟡 Partial | Canonical catalog binding exists; breadth and lowering continue to expand |
-| DEL/OSTW → Workshop compilation | 🟡 Partial | Core HIR→WIR lowering exists; advanced runtime/project surfaces are incomplete |
+| DEL/OSTW → Workshop compilation | 🟡 Partial | Core HIR→Program lowering exists; advanced runtime/project surfaces are incomplete |
 | Workshop → DEL/OSTW reconstruction | ⏳ Not yet | Will consume canonical `workshop-rs` semantics and remain owned by `deltin-rs` |
 
 Exact implementation evidence lives in the
