@@ -45,7 +45,7 @@ The decision changes internal discoverability only. Public semantic/check APIs,
 diagnostics, provenance, HIR inputs, and Workshop-independent behavior remain
 the compatibility surface and require regression evidence when changed.
 
-## Open questions
+## Boundary exclusions
 
 Future semantic domains may require a bounded responsibility decision when
 their behavior does not fit an existing owner. Such a change should update the

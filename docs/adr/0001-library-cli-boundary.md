@@ -12,8 +12,8 @@ presentation are a separate distribution concern. Keeping both in one package
 would make ordinary library consumers inherit CLI dependencies and would make
 the executable a second owner of language behavior.
 
-Issue #80 established this boundary. PR #81 completed the package split and
-kept the CLI as a consumer of the library's public APIs.
+Issue #80 established this boundary. PR #81 records the package split and
+keeps the CLI as a consumer of the library's public APIs.
 
 Historical evidence: [PR #81](https://github.com/wrightkit/deltin-rs/pull/81)
 and its package-split commits, including the follow-up that deferred the
@@ -47,8 +47,9 @@ language/provenance contracts. Package metadata and dependency boundaries are
 part of the distribution contract; command names and language semantics require
 their own compatibility evidence when changed.
 
-## Open questions
+## Boundary exclusions
 
 Future library compiler or reconstruction APIs require their own approved
-contracts. The remaining DEL consumer migration and provenance acceptance are
-tracked separately in [deltin-rs #107](https://github.com/wrightkit/deltin-rs/issues/107).
+contracts. This ADR does not decide the DEL runtime ABI or a complete
+provenance/source-attachment contract; either would require a separate material
+decision if adopted.

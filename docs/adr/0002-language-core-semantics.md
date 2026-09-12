@@ -8,9 +8,9 @@
 
 The original architecture baseline and its Q1–Q16 decision log combined
 language scope, implementation plans, support state, and historical milestone
-details. The baseline was replaced by current contracts in #89. The stable
-language decisions still need a normalized historical record without turning
-the support matrix or the old decision log into a semantic specification.
+details. The baseline was replaced by current contracts in #89. This record
+normalizes the stable language decisions without turning the support matrix or
+the old decision log into a semantic specification.
 
 The rationale was recovered from the original architecture D1–D6 summary,
 the ratified decision log, the #2–#7 issue contracts, and the current
@@ -59,9 +59,8 @@ lowering results where evidenced. Passing a matrix check or matching emitted
 text alone does not establish core semantic compatibility. Unsupported and
 inconclusive evidence remains distinct from a match.
 
-## Open questions
+## Scope boundary
 
-Individual language behaviors not yet resolved by upstream evidence or the
-accepted contract remain implementation work or an explicitly tracked decision;
-this ADR does not promote every historical Q1–Q16 default or support-matrix
-state into a new language rule.
+This ADR does not promote every historical Q1–Q16 default or support-matrix
+state into a language rule. A material language decision belongs in the current
+architecture contract and, when warranted, a separate ADR.
