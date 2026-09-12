@@ -465,33 +465,128 @@ rule: "player" Event.OngoingPlayer {
         .iter()
         .find(|rule| rule.name == "flow")
         .expect("flow rule");
+    assert_eq!(flow.actions.len(), 20);
     assert!(matches!(
-        flow.actions[0],
-        workshop_rs::Action::SetGlobalVariable { .. }
+        &flow.actions[0],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "index" && matches!(value, workshop_rs::Value::Number(number) if *number == 0.0)
     ));
-    assert!(matches!(flow.actions[1], workshop_rs::Action::While { .. }));
-    assert!(
-        flow.actions
-            .iter()
-            .filter(|action| matches!(action, workshop_rs::Action::SetGlobalVariable { .. }))
-            .count()
-            >= 2
-    );
-    assert!(
-        flow.actions
-            .iter()
-            .filter(|action| matches!(action, workshop_rs::Action::While { .. }))
-            .count()
-            >= 2
-    );
-    assert!(flow
-        .actions
-        .iter()
-        .any(|action| matches!(action, workshop_rs::Action::If { .. })));
-    assert!(flow
-        .actions
-        .iter()
-        .any(|action| matches!(action, workshop_rs::Action::Else)));
+    assert!(matches!(
+        &flow.actions[1],
+        workshop_rs::Action::While {
+            condition: workshop_rs::Value::Call { name, args }
+        } if name == "<"
+            && matches!(args.as_slice(), [
+                workshop_rs::Value::GlobalVariable(variable),
+                workshop_rs::Value::Number(limit),
+            ] if variable == "index" && *limit == 3.0)
+    ));
+    assert!(matches!(
+        &flow.actions[2],
+        workshop_rs::Action::If {
+            condition: workshop_rs::Value::Call { name, args }
+        } if name == "=="
+            && matches!(args.as_slice(), [
+                workshop_rs::Value::GlobalVariable(variable),
+                workshop_rs::Value::Number(value),
+            ] if variable == "index" && *value == 1.0)
+    ));
+    assert!(matches!(
+        &flow.actions[3],
+        workshop_rs::Action::ModifyGlobalVariable { variable, op, value }
+            if variable == "index" && *op == workshop_rs::ModifyOp::Add
+                && matches!(value, workshop_rs::Value::Number(number) if *number == 2.0)
+    ));
+    assert!(matches!(&flow.actions[4], workshop_rs::Action::End));
+    assert!(matches!(
+        &flow.actions[5],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "index"
+                && matches!(value, workshop_rs::Value::Call { name, args }
+                    if name == "add"
+                        && matches!(args.as_slice(), [
+                            workshop_rs::Value::GlobalVariable(variable),
+                            workshop_rs::Value::Number(step),
+                        ] if variable == "index" && *step == 1.0))
+    ));
+    assert!(matches!(&flow.actions[6], workshop_rs::Action::End));
+    assert!(matches!(
+        &flow.actions[7],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "index" && matches!(value, workshop_rs::Value::Number(number) if *number == 0.0)
+    ));
+    assert!(matches!(
+        &flow.actions[8],
+        workshop_rs::Action::While {
+            condition: workshop_rs::Value::Call { name, args }
+        } if name == "<"
+            && matches!(args.as_slice(), [
+                workshop_rs::Value::GlobalVariable(variable),
+                workshop_rs::Value::Number(limit),
+            ] if variable == "index" && *limit == 2.0)
+    ));
+    assert!(matches!(
+        &flow.actions[9],
+        workshop_rs::Action::ModifyGlobalVariable { variable, op, value }
+            if variable == "index" && *op == workshop_rs::ModifyOp::Add
+                && matches!(value, workshop_rs::Value::Number(number) if *number == 1.0)
+    ));
+    assert!(matches!(&flow.actions[10], workshop_rs::Action::End));
+    assert!(matches!(
+        &flow.actions[11],
+        workshop_rs::Action::If {
+            condition: workshop_rs::Value::Call { name, args }
+        } if name == "=="
+            && matches!(args.as_slice(), [
+                workshop_rs::Value::GlobalVariable(variable),
+                workshop_rs::Value::Number(value),
+            ] if variable == "index" && *value == 1.0)
+    ));
+    assert!(matches!(
+        &flow.actions[12],
+        workshop_rs::Action::ModifyGlobalVariable { variable, op, value }
+            if variable == "index" && *op == workshop_rs::ModifyOp::Add
+                && matches!(value, workshop_rs::Value::Number(number) if *number == 1.0)
+    ));
+    assert!(matches!(
+        &flow.actions[13],
+        workshop_rs::Action::ElseIf {
+            condition: workshop_rs::Value::Call { name, args }
+        } if name == "=="
+            && matches!(args.as_slice(), [
+                workshop_rs::Value::GlobalVariable(variable),
+                workshop_rs::Value::Number(value),
+            ] if variable == "index" && *value == 2.0)
+    ));
+    assert!(matches!(
+        &flow.actions[14],
+        workshop_rs::Action::ModifyGlobalVariable { variable, op, value }
+            if variable == "index" && *op == workshop_rs::ModifyOp::Add
+                && matches!(value, workshop_rs::Value::Number(number) if *number == 2.0)
+    ));
+    assert!(matches!(
+        &flow.actions[15],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "index" && matches!(value, workshop_rs::Value::Number(number) if *number == 0.0)
+    ));
+    assert!(matches!(&flow.actions[16], workshop_rs::Action::Else));
+    assert!(matches!(
+        &flow.actions[17],
+        workshop_rs::Action::SetGlobalVariable { variable, value }
+            if variable == "index" && matches!(value, workshop_rs::Value::Number(number) if *number == 0.0)
+    ));
+    assert!(matches!(&flow.actions[18], workshop_rs::Action::End));
+    assert!(matches!(
+        &flow.actions[19],
+        workshop_rs::Action::SetGlobalVariable {
+            variable,
+            value: workshop_rs::Value::Array(values),
+        } if variable == "values"
+            && matches!(values.as_slice(), [
+                workshop_rs::Value::Number(first),
+                workshop_rs::Value::Number(second),
+            ] if *first == 3.0 && *second == 4.0)
+    ));
 }
 
 #[test]

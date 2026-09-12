@@ -135,5 +135,25 @@ fn catalog_provider_rejects_excess_arguments_and_exposes_catalog_identity() {
     let provider = CatalogProvider::new().expect("built-in catalog");
     let result = provider.resolve(&query(&[], "Wait", ExternalPosition::Value, 3));
     assert!(matches!(result, ExternalResolution::DefiniteError(_)));
-    assert_eq!(provider.catalog_identity().catalog_version, "0.1.5");
+    let identity = provider.catalog_identity();
+    assert!(!identity.implementation_version.is_empty());
+    assert!(!identity.catalog_version.is_empty());
+    assert!(identity.catalog_digest.as_deref().is_some_and(|digest| {
+        digest.len() == 64
+            && digest
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+    }));
+    assert!(!identity.locale_coverage.is_empty());
+    assert!(identity
+        .locale_coverage
+        .iter()
+        .all(|coverage| coverage.mapped <= coverage.total));
+    assert!(!identity.target.game.is_empty());
+    assert!(!identity.target.format.is_empty());
+    assert!(!identity.target.surface.is_empty());
+    assert!(!identity.provenance.generator.is_empty());
+    assert!(!identity.provenance.source.is_empty());
+    assert!(!identity.provenance.license.is_empty());
+    assert!(identity.provenance.reviewed);
 }
