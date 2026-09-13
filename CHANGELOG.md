@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/wrightkit/deltin-rs/compare/v0.1.5...v0.1.6) - 2026-09-12
+
+### Added
+
+- *(workshop)* lower DEL through canonical Program API ([#108](https://github.com/wrightkit/deltin-rs/pull/108))
+- *(workshop)* lower localized strings ([#105](https://github.com/wrightkit/deltin-rs/pull/105))
+
 ## [0.1.5](https://github.com/wrightkit/deltin-rs/compare/v0.1.4...v0.1.5) - 2026-09-09
 
 ### Other
